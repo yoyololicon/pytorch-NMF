@@ -4,24 +4,24 @@ from .utils import *
 
 
 class _NMF(nn.Module):
-    def __init__(self, K, M, R, W, H):
+    def __init__(self, K, M, R, W, H, fix_W, fix_H):
         super().__init__()
         self.K = K
         self.M = M
         self.R = R
-        self.fix_W = True
-        self.fix_H = True
+        self.fix_W = False
+        self.fix_H = False
         if type(W) == tuple:
             init_W = torch.Tensor(*W)
-            self.fix_W = False
         else:
             init_W = return_torch(W)
+            self.fix_W = fix_W
 
         if type(H) == tuple:
             init_H = torch.Tensor(*H)
-            self.fix_H = False
         else:
             init_H = return_torch(H)
+            self.fix_H = fix_H
 
         self.W = nn.Parameter(init_W, requires_grad=False)
         self.H = nn.Parameter(init_H, requires_grad=False)
@@ -69,13 +69,13 @@ class NMF(_NMF):
     doc.
     """
 
-    def __init__(self, Vshape, R, W=None, H=None):
+    def __init__(self, Vshape, R, W=None, H=None, fix_W=False, fix_H=False):
         K, M = Vshape
         if W is None:
             W = (K, R)
         if H is None:
             H = (R, M)
-        super().__init__(K, M, R, W, H)
+        super().__init__(K, M, R, W, H, fix_W, fix_H)
 
     def update_W(self, VV):
         Ht = self.H.t()
@@ -91,14 +91,14 @@ class NMFD(_NMF):
     doc.
     """
 
-    def __init__(self, Vshape, R, T=5, W=None, H=None):
+    def __init__(self, Vshape, R, T=5, W=None, H=None, fix_W=False, fix_H=False):
         self.T = T
         K, M = Vshape
         if W is None:
             W = (K, R, T)
         if H is None:
             H = (R, M)
-        super().__init__(K, M, R, W, H)
+        super().__init__(K, M, R, W, H, fix_W, fix_H)
 
     def update_W(self, VV):
         expand_H = torch.stack([F.pad(self.H[:, :self.M - j], (j, 0)) for j in range(self.T)], dim=2)

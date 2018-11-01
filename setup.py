@@ -1,13 +1,14 @@
 import setuptools
+from torchnmf import __version__, __email__, name, __maintainer__
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="torchnmf",
-    version="0.0.1",
+    name=name,
+    version=__version__,
     author="Chin Yun Yu",
-    author_email="lolimaster.cs03@nctu.edu.tw",
+    author_email=__email__,
     description="A pytorch package for Non-negative Matrix Factorization",
     long_description=long_description,
     long_description_content_type="text/markdown",
