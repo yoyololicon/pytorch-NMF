@@ -1,9 +1,8 @@
-import torch
-from torch.nn import functional as F
+import numpy as np
 
 
 def generalized_KL_divergence(V, V_tilde):
-    return torch.sum(V * torch.log(V / V_tilde) - V + V_tilde)
+    return np.sum(V * np.log(V / V_tilde) - V + V_tilde)
 
 
 def NMF(S, R, init_W=None, init_H=None, fix_W=False, fix_H=False, n_iter=50):
@@ -22,13 +21,13 @@ def NMF(S, R, init_W=None, init_H=None, fix_W=False, fix_H=False, n_iter=50):
     K, M = S.shape
 
     if init_W is None:
-        W = torch.rand(K, R)
+        W = np.random.rand(K, R)
     else:
-        W = init_W.clone()
+        W = init_W.copy()
     if init_H is None:
-        H = torch.rand(R, M)
+        H = np.random.rand(R, M)
     else:
-        H = init_H.clone()
+        H = init_H.copy()
 
     for i in range(n_iter):
         V = W @ H
@@ -38,11 +37,13 @@ def NMF(S, R, init_W=None, init_H=None, fix_W=False, fix_H=False, n_iter=50):
         SonV = S / V
         # update W
         if not fix_W:
-            W *= SonV @ H.t() / H.t().sum(0)
+            Ht = H.T
+            W *= SonV @ Ht / Ht.sum(0)
 
         # update H
         if not fix_H:
-            H *= W.t() @ SonV / W.t().sum(1, keepdim=True)
+            Wt = W.T
+            H *= Wt @ SonV / Wt.sum(1, keepdims=True)
 
     return W, H
 
@@ -64,16 +65,17 @@ def NMFD(S, R, T, init_W=None, init_H=None, fix_W=False, fix_H=False, n_iter=50)
     K, M = S.shape
 
     if init_W is None:
-        W = torch.rand(K, R, T)
+        W = np.random.rand(K, R, T)
     else:
-        W = init_W.clone()
+        W = init_W.copy()
     if init_H is None:
-        H = torch.rand(R, M)
+        H = np.random.rand(R, M)
     else:
-        H = init_H.clone()
+        H = init_H.copy()
 
     for i in range(n_iter):
-        V = F.conv1d(H[None, :], W.flip(2), padding=T - 1)[0, :, :M]
+        expand_H = np.stack((np.roll(H, j, 1) for j in range(T)), axis=0)
+        V = np.tensordot(W, expand_H, axes=([2, 1], [0, 1]))
 
         loss = generalized_KL_divergence(S, V)
         print("Iter", "%d" % (i + 1), ", KL:" "%.4f" % loss)
@@ -81,43 +83,40 @@ def NMFD(S, R, T, init_W=None, init_H=None, fix_W=False, fix_H=False, n_iter=50)
         SonV = S / V
         # update W
         if not fix_W:
-            expand_H = torch.stack([F.pad(H[:, :M-j], (j, 0)) for j in range(T)], dim=2)
-            upper = (SonV @ expand_H).transpose(0, 1)
-            lower = expand_H.transpose(0, 1).sum(0)
+            upper = np.swapaxes(np.tensordot(SonV, expand_H, axes=(1, 2)), 1, 2)
+            lower = np.swapaxes(expand_H.sum(2, keepdims=True), 0, 2)
             W *= upper / lower
 
         # update H
         if not fix_H:
-            expand_SonV = torch.stack([F.pad(SonV[:, j:], (0, j)) for j in range(T)], dim=0)
-            upper = W.transpose(0, 2) @ expand_SonV  # (T, R, M)
-            lower = W.transpose(0, 1).sum(1, keepdim=True)
-            H *= torch.mean(upper.permute(1, 2, 0) / lower, 2)
+            expand_SonV = np.stack((np.roll(SonV, -j, 1) for j in range(T)), axis=0)
+            Wt = np.swapaxes(W, 0, 2)
+            upper = Wt @ expand_SonV
+            lower = Wt.sum(2, keepdims=True)
+            H *= np.mean(upper / lower, 0)
 
     return W, H
 
 
 if __name__ == '__main__':
     import librosa
-    import numpy as np
     import matplotlib.pyplot as plt
     from librosa import display
 
-    #torch.set_default_tensor_type(torch.DoubleTensor)
     y, sr = librosa.load(librosa.util.example_audio_file())
     S = np.abs(librosa.stft(y))
-    S = torch.from_numpy(S)
+
     R = 8
     T = 5
+    comps, acts = NMFD(S, R=R, T=T, n_iter=50)
+    # comps, acts = librosa.decompose.decompose(S, n_components=8, sort=True)
 
-    comps, acts = NMFD(S, R=R, T=T, n_iter=150)
-    V = F.conv1d(acts[None, :], comps.flip(2), padding=T - 1)[0]
-    comps = comps.numpy()
-    acts = acts.numpy()
-    display.specshow(np.log1p(comps[:, 0, :]), y_axis='log')
+    display.specshow(np.log1p(comps[:, :, 0]), y_axis='log')
     plt.show()
     plt.imshow(np.log1p(acts), aspect='auto', origin='lower')
     plt.show()
 
-
-    display.specshow(np.log1p(V.numpy()), y_axis='log')
+    expand_H = np.stack((np.roll(acts, j, 1) for j in range(T)), axis=0)
+    V = np.tensordot(comps, expand_H, axes=([2, 1], [0, 1]))
+    display.specshow(np.log1p(V), y_axis='log')
     plt.show()
