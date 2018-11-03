@@ -10,23 +10,16 @@ def KL_divergence(V, V_tilde):
     :param V_tilde: Reconstructed matrix.
     :return: Distance.
     """
-    if type(V) != type(V_tilde):
-        raise TypeError
 
-    if type(V) == np.ndarray:
-        idx = V.nonzero()
-        log = np.log
-    elif type(V) == torch.Tensor:
-        id1, *id2 = V.nonzero().t()
-        idx = [id1] + id2
-        log = torch.log
-    else:
-        raise TypeError
-    nonzeroV = V[idx]
-    return (nonzeroV * log(nonzeroV / V_tilde[idx])).sum() + (V_tilde - V).sum()
+    V2 = V.clone()
+    id1, *id2 = (V2 == 0).nonzero().t()
+    idx = [id1] + id2
+    V2[idx] = 1
+
+    return torch.sum(V2 * torch.log(V2 / V_tilde) - V + V_tilde)
 
 
-def Frobenius(V, V_tilde):
+def Euclidean(V, V_tilde):
     """
     Squared Frobenius norm.
 
@@ -45,18 +38,8 @@ def IS_divergence(V, V_tilde):
     :param V_tilde: Reconstructed matrix.
     :return: Distance.
     """
-    if type(V) != type(V_tilde):
-        raise TypeError
-
-    if type(V) == np.ndarray:
-        idx = V.nonzero()
-        log = np.log
-    elif type(V) == torch.Tensor:
-        id1, *id2 = V.nonzero().t()
-        idx = [id1] + id2
-        log = torch.log
-    else:
-        raise TypeError
-    nonzeroV = V[idx]
-    Vt = V_tilde[idx]
-    return (nonzeroV / Vt - log(nonzeroV / Vt) - 1).sum()
+    V2 = V.clone()
+    id1, *id2 = (V2 == 0).nonzero().t()
+    idx = [id1] + id2
+    V2[idx] = 1
+    return torch.sum(V2 / V_tilde - torch.log(V2 / V_tilde) - 1)
