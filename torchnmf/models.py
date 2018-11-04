@@ -158,10 +158,10 @@ class NMF_L2(_NMF):
             H = (R, M)
         super().__init__(K, M, R, W, H, fix_W, fix_H)
 
-    def _get_W_positive(self):
+    def get_W_positive(self):
         return self.W @ self.H @ self.H.t()
 
-    def _get_H_positive(self):
+    def get_H_positive(self):
         return self.W.t() @ self.W @ self.H
 
     def loss_fn(self, predict, target):
@@ -173,10 +173,10 @@ class NMF_KL(NMF_L2):
     Standard NMF model.
     """
 
-    def _get_W_positive(self):
+    def get_W_positive(self):
         return self.H.sum(1, keepdim=True).t()
 
-    def _get_H_positive(self):
+    def get_H_positive(self):
         return self.W.sum(0, keepdim=True).t()
 
     def loss_fn(self, predict, target):
@@ -185,11 +185,11 @@ class NMF_KL(NMF_L2):
 
 class NMF_IS(NMF_L2):
 
-    def _get_W_positive(self):
-        return (1 / self.W @ self.H) @ self.H.t()
+    def get_W_positive(self):
+        return (1 / (self.W @ self.H)) @ self.H.t()
 
-    def _get_H_positive(self):
-        return self.W.t() @ (1 / self.W @ self.H)
+    def get_H_positive(self):
+        return self.W.t() @ (1 / (self.W @ self.H))
 
     def loss_fn(self, predict, target):
         return IS_divergence(predict, target)
@@ -200,10 +200,10 @@ class NMF_Beta(NMF_L2):
         self.b = beta
         super().__init__(*args)
 
-    def _get_W_positive(self):
+    def get_W_positive(self):
         return (self.W @ self.H) ** (self.b - 1) @ self.H.t()
 
-    def _get_H_positive(self):
+    def get_H_positive(self):
         return self.W.t() @ (self.W @ self.H) ** (self.b - 1)
 
     def loss_fn(self, predict, target):
