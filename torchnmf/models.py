@@ -2,6 +2,8 @@ from torch import nn
 from torch.nn import functional as F
 from .utils import *
 
+print("brachn test")
+
 
 class _NMF(nn.Module):
     """
