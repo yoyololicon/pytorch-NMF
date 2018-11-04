@@ -195,6 +195,21 @@ class NMF_IS(NMF_L2):
         return IS_divergence(predict, target)
 
 
+class NMF_Beta(NMF_L2):
+    def __init__(self, *args, beta=2):
+        self.b = beta
+        super().__init__(*args)
+
+    def _get_W_positive(self):
+        return (self.W @ self.H) ** (self.b - 1) @ self.H.t()
+
+    def _get_H_positive(self):
+        return self.W.t() @ (self.W @ self.H) ** (self.b - 1)
+
+    def loss_fn(self, predict, target):
+        return Beta_divergence(predict, target, beta=self.b)
+
+
 class NMFD(_NMF):
     """
     NMF deconvolution model.

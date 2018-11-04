@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
-import numpy as np
+
+eps = 1e-8
 
 
 def KL_divergence(V_tilde, V):
@@ -11,13 +12,7 @@ def KL_divergence(V_tilde, V):
     :param V_tilde: Reconstructed matrix.
     :return: Distance.
     """
-
-    V2 = V.clone()
-    id1, *id2 = (V2 == 0).nonzero().t()
-    idx = [id1] + id2
-    V2[idx] = 1
-
-    return torch.sum(V2 * torch.log(V2 / V_tilde) - V + V_tilde)
+    return torch.sum(V * torch.log(V / V_tilde + eps) - V + V_tilde)
 
 
 def Euclidean(V_tilde, V):
@@ -39,8 +34,24 @@ def IS_divergence(V_tilde, V):
     :param V_tilde: Reconstructed matrix.
     :return: Distance.
     """
-    V2 = V.clone()
-    id1, *id2 = (V2 == 0).nonzero().t()
-    idx = [id1] + id2
-    V2[idx] = 1
-    return torch.sum(V2 / V_tilde - torch.log(V2 / V_tilde) - 1)
+    VV = V / V_tilde
+    return torch.sum(VV - torch.log(VV + eps) - 1)
+
+
+def Beta_divergence(V_tilde, V, beta=2.):
+    if beta == 1:
+        return KL_divergence(V_tilde, V)
+    elif beta == 0:
+        return IS_divergence(V_tilde, V)
+    else:
+        bminus = beta - 1
+        return torch.sum((V ** beta + bminus * V_tilde ** beta - beta * V * V_tilde ** bminus) / (beta * bminus))
+
+
+if __name__ == '__main__':
+    a = torch.rand(10)
+    b = torch.rand(10)
+
+    print(Beta_divergence(a, b).item(), Euclidean(a, b).item())
+    print(Beta_divergence(a, b, 1).item(), KL_divergence(a, b).item())
+    print(Beta_divergence(a, b, 0).item(), IS_divergence(a, b).item())
