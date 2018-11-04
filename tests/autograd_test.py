@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from librosa import display
 
 from torchnmf import NMF, NMFD
-from torchnmf.metrics import KL_divergence, IS_divergence
+from torchnmf.metrics import KL_divergence, IS_divergence, Euclidean
 
 if __name__ == '__main__':
     y, sr = librosa.load(librosa.util.example_audio_file())
@@ -18,7 +18,7 @@ if __name__ == '__main__':
     W = torch.nn.Parameter(torch.rand(K, R))
     H = torch.nn.Parameter(torch.rand(R, M))
 
-    loss_fn = torch.nn.MSELoss(reduction='sum')
+    loss_fn = Euclidean
 
     for i in range(50):
 
@@ -26,7 +26,7 @@ if __name__ == '__main__':
             W.grad.data.zero_()
         V_tilde = W @ H
 
-        loss = loss_fn(V_tilde, S) / 2
+        loss = loss_fn(V_tilde, S)
         print(i, loss.item())
         loss.backward()
 
@@ -37,7 +37,7 @@ if __name__ == '__main__':
         if H.grad is not None:
             H.grad.data.zero_()
         V_tilde = W @ H
-        loss = loss_fn(V_tilde, S) / 2
+        loss = loss_fn(V_tilde, S)
         print(i, loss.item())
         loss.backward()
 
