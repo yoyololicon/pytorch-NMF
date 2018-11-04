@@ -1,6 +1,7 @@
 from torch import nn
-from torch.nn import functional as F
 from .utils import *
+from .metrics import *
+
 
 class _NMF(nn.Module):
     """
@@ -85,9 +86,8 @@ class _NMF(nn.Module):
         :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
         :return: updated W.
         """
-        if self.W.requires_grad:
-            pos = self._get_W_positive()
-            self._mu_update(self.W, pos)
+        pos = self.get_W_positive()
+        self._mu_update(self.W, pos)
         return self.W
 
     def update_H(self):
@@ -97,15 +97,14 @@ class _NMF(nn.Module):
         :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
         :return: updated H.
         """
-        if self.H.requires_grad:
-            pos = self._get_H_positive()
-            self._mu_update(self.H, pos)
+        pos = self.get_H_positive()
+        self._mu_update(self.H, pos)
         return self.H
 
-    def _get_W_positive(self):
+    def get_W_positive(self):
         raise NotImplementedError
 
-    def _get_H_positive(self):
+    def get_H_positive(self):
         raise NotImplementedError
 
     def _mu_update(self, param, pos):
@@ -136,7 +135,7 @@ class _NMF(nn.Module):
         return W @ H
 
 
-class NMF(_NMF):
+class NMF_L2(_NMF):
     """
     Standard NMF model.
     """
@@ -159,13 +158,41 @@ class NMF(_NMF):
             H = (R, M)
         super().__init__(K, M, R, W, H, fix_W, fix_H)
 
-    def _update_W(self, VV):
-        Ht = self.H.t()
-        self.W *= VV @ Ht / Ht.sum(0)
+    def _get_W_positive(self):
+        return self.W @ self.H @ self.H.t()
 
-    def _update_H(self, VV):
-        Wt = self.W.t()
-        self.H *= Wt @ VV / Wt.sum(1, keepdim=True)
+    def _get_H_positive(self):
+        return self.W.t() @ self.W @ self.H
+
+    def loss_fn(self, predict, target):
+        return Euclidean(predict, target)
+
+
+class NMF_KL(NMF_L2):
+    """
+    Standard NMF model.
+    """
+
+    def _get_W_positive(self):
+        return self.H.sum(1, keepdim=True).t()
+
+    def _get_H_positive(self):
+        return self.W.sum(0, keepdim=True).t()
+
+    def loss_fn(self, predict, target):
+        return KL_divergence(predict, target)
+
+
+class NMF_IS(NMF_L2):
+
+    def _get_W_positive(self):
+        return (1 / self.W @ self.H) @ self.H.t()
+
+    def _get_H_positive(self):
+        return self.W.t() @ (1 / self.W @ self.H)
+
+    def loss_fn(self, predict, target):
+        return IS_divergence(predict, target)
 
 
 class NMFD(_NMF):

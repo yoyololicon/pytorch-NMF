@@ -1,8 +1,9 @@
 import torch
+from torch.nn import functional as F
 import numpy as np
 
 
-def KL_divergence(V, V_tilde):
+def KL_divergence(V_tilde, V):
     """
     The generalized Kullback-Leibler divergence.
 
@@ -19,7 +20,7 @@ def KL_divergence(V, V_tilde):
     return torch.sum(V2 * torch.log(V2 / V_tilde) - V + V_tilde)
 
 
-def Euclidean(V, V_tilde):
+def Euclidean(V_tilde, V):
     """
     Squared Frobenius norm.
 
@@ -27,10 +28,10 @@ def Euclidean(V, V_tilde):
     :param V_tilde: Reconstructed matrix.
     :return: Distance.
     """
-    return (V - V_tilde).pow(2).sum() / 2
+    return F.mse_loss(V_tilde, V, reduction='sum') / 2
 
 
-def IS_divergence(V, V_tilde):
+def IS_divergence(V_tilde, V):
     """
     The Itakura-Saito divergence:
 
