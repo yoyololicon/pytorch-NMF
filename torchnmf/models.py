@@ -2,9 +2,6 @@ from torch import nn
 from torch.nn import functional as F
 from .utils import *
 
-print("brachn test")
-
-
 class _NMF(nn.Module):
     """
     This is the base class for any NMF model.
@@ -36,8 +33,6 @@ class _NMF(nn.Module):
         self.K = K
         self.M = M
         self.R = R
-        self.fix_W = False
-        self.fix_H = False
         if type(W) == tuple:
             init_W = torch.Tensor(*W)
         else:
@@ -50,8 +45,8 @@ class _NMF(nn.Module):
             init_H = return_torch(H)
             self.fix_H = fix_H
 
-        self.W = nn.Parameter(init_W, requires_grad=False)
-        self.H = nn.Parameter(init_H, requires_grad=False)
+        self.W = nn.Parameter(init_W, requires_grad=not fix_W)
+        self.H = nn.Parameter(init_H, requires_grad=not fix_H)
         self.reset_weight()
 
     def reset_weight(self):
@@ -60,12 +55,18 @@ class _NMF(nn.Module):
 
         :return: None.
         """
-        if not self.fix_W:
-            self.W.data.uniform_()
-        if not self.fix_H:
-            self.H.data.uniform_()
+        for param in self.parameters():
+            if param.requires_grad:
+                param.data.uniform_()
 
-    def forward(self, V, n_iter=1):
+    def loss_fn(self, predict, target):
+        """
+
+        :return: loss
+        """
+        raise NotImplementedError
+
+    def forward(self, V):
         """
         Fit the model based on target matrix V.
 
@@ -73,33 +74,49 @@ class _NMF(nn.Module):
         :param n_iter: Number of iterations.
         :return: W, H.
         """
-        for i in range(n_iter):
-            VonV = V / self.reconstruct()
-            modified = False
-            if not self.fix_W:
-                self._update_W(VonV)
-                modified = True
-            if not self.fix_H:
-                if modified:
-                    VonV = V / self.reconstruct()
-                self._update_H(VonV)
-        return self.W, self.H
+        V_tilde = self.reconstruct()
+        loss = self.loss_fn(V_tilde, V)
+        return V_tilde, loss
 
-    def _update_W(self, VV):
+    def update_W(self):
         """
         Update mechanism for Basis Matrix W.
 
         :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
-        :return: None
+        :return: updated W.
         """
+        if self.W.requires_grad:
+            pos = self._get_W_positive()
+            self._mu_update(self.W, pos)
+        return self.W
 
-    def _update_H(self, VV):
+    def update_H(self):
         """
         Update mechanism for Mixture Matrix H.
 
         :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
-        :return: None:
+        :return: updated H.
         """
+        if self.H.requires_grad:
+            pos = self._get_H_positive()
+            self._mu_update(self.H, pos)
+        return self.H
+
+    def _get_W_positive(self):
+        raise NotImplementedError
+
+    def _get_H_positive(self):
+        raise NotImplementedError
+
+    def _mu_update(self, param, pos):
+        """
+
+        :param param:
+        :param pos:
+        :return: None
+        """
+        neg = pos - param.grad.data
+        param.data.mul_(neg / pos)
 
     def reconstruct(self, W=None, H=None):
         """
