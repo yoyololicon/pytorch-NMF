@@ -164,7 +164,7 @@ class NMF_KL(NMF_L2):
     """
 
     def get_W_positive(self):
-        return self.H.data.sum(1, keepdim=True).t()
+        return self.H.data.sum(1)
 
     def get_H_positive(self):
         return self.W.data.sum(0, keepdim=True).t()
@@ -248,20 +248,24 @@ class NMFD_KL(_NMFD):
         return KL_divergence(predict, target)
 
 
-class NMFD_L2(_NMFD):
+class NMFD_Beta(_NMFD):
     """
     NMF deconvolution model.
     """
 
+    def __init__(self, *args, beta=2):
+        self.b = beta
+        super().__init__(*args)
+
     def get_W_positive(self):
         expand_H = torch.stack([F.pad(self.H.data[:, :self.M - j], (j, 0)) for j in range(self.T)], dim=2)
-        tmp = self.conv(self.W.data, self.H.data) @ expand_H
+        tmp = self.conv(self.W.data, self.H.data) ** (self.b - 1) @ expand_H
         return tmp.transpose(0, 1)
 
     def get_H_positive(self):
-        V = self.conv(self.W.data, self.H.data)
+        V = self.conv(self.W.data, self.H.data) ** (self.b - 1)
         expand_V = torch.stack([F.pad(V[:, j:], (0, j)) for j in range(self.T)], dim=0)
         return (self.W.data.transpose(0, 2) @ expand_V).sum(0)
 
     def loss_fn(self, predict, target):
-        return Euclidean(predict, target)
+        return Beta_divergence(predict, target, self.b)
