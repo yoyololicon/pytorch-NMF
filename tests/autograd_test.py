@@ -12,11 +12,12 @@ if __name__ == '__main__':
     y = torch.from_numpy(y)
     windowsize = 2048
     S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt().cuda()
-    R = 16
+    R = 8
+    T = 5
 
-    net = NMF_KL(S.shape, R).cuda()
+    net = NMFD_KL(S.shape, R, T).cuda()
 
-    for i in range(500):
+    for i in range(100):
         net.zero_grad()
         V, loss = net(S)
         loss_tmp = loss.item()
@@ -30,7 +31,7 @@ if __name__ == '__main__':
         H = net.update_H()
 
     plt.subplot(3, 1, 1)
-    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy(), ref=np.max), y_axis='log')
+    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy()[:, 0], ref=np.max), y_axis='log')
     plt.title('Template ')
     plt.subplot(3, 1, 2)
     display.specshow(H.detach().cpu().numpy(), x_axis='time')

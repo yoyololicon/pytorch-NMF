@@ -2,6 +2,8 @@ from torch import nn
 from .utils import *
 from .metrics import *
 
+import collections
+
 
 class _NMF(nn.Module):
     """
@@ -34,13 +36,13 @@ class _NMF(nn.Module):
         self.K = K
         self.M = M
         self.R = R
-        if type(W) == tuple:
+        if isinstance(W, collections.Iterable):
             init_W = torch.Tensor(*W)
         else:
             init_W = return_torch(W)
             self.fix_W = fix_W
 
-        if type(H) == tuple:
+        if isinstance(H, collections.Iterable):
             init_H = torch.Tensor(*H)
         else:
             init_H = return_torch(H)
@@ -114,25 +116,13 @@ class _NMF(nn.Module):
         :param pos:
         :return: None
         """
+        if param.grad is None:
+            return
         neg = pos - param.grad.data
         param.data.mul_(neg / pos)
 
-    def reconstruct(self, W=None, H=None):
-        """
-        Reconstruct mechanism for target matrix.
-
-        :param W: Basis matrix. If not provided will use internal matrix.
-        :param H: Mixture matrix. If not provided will use internal matrix.
-        :return: Reconstructed matrix.
-        """
-        if W is None:
-            W = self.W
-        if H is None:
-            H = self.H
-        return self._reconstruct(W, H)
-
-    def _reconstruct(self, W, H):
-        return W @ H
+    def reconstruct(self):
+        return self.W @ self.H
 
 
 class NMF_L2(_NMF):
@@ -159,10 +149,10 @@ class NMF_L2(_NMF):
         super().__init__(K, M, R, W, H, fix_W, fix_H)
 
     def get_W_positive(self):
-        return self.W @ self.H @ self.H.t()
+        return self.W.data @ self.H.data @ self.H.data.t()
 
     def get_H_positive(self):
-        return self.W.t() @ self.W @ self.H
+        return self.W.data.t() @ self.W.data @ self.H.data
 
     def loss_fn(self, predict, target):
         return Euclidean(predict, target)
@@ -174,10 +164,10 @@ class NMF_KL(NMF_L2):
     """
 
     def get_W_positive(self):
-        return self.H.sum(1, keepdim=True).t()
+        return self.H.data.sum(1, keepdim=True).t()
 
     def get_H_positive(self):
-        return self.W.sum(0, keepdim=True).t()
+        return self.W.data.sum(0, keepdim=True).t()
 
     def loss_fn(self, predict, target):
         return KL_divergence(predict, target)
@@ -186,10 +176,10 @@ class NMF_KL(NMF_L2):
 class NMF_IS(NMF_L2):
 
     def get_W_positive(self):
-        return (1 / (self.W @ self.H)) @ self.H.t()
+        return (1 / (self.W.data @ self.H.data)) @ self.H.data.t()
 
     def get_H_positive(self):
-        return self.W.t() @ (1 / (self.W @ self.H))
+        return self.W.data.t() @ (1 / (self.W.data @ self.H.data))
 
     def loss_fn(self, predict, target):
         return IS_divergence(predict, target)
@@ -201,21 +191,21 @@ class NMF_Beta(NMF_L2):
         super().__init__(*args)
 
     def get_W_positive(self):
-        return (self.W @ self.H) ** (self.b - 1) @ self.H.t()
+        return (self.W.data @ self.H.data) ** (self.b - 1) @ self.H.data.t()
 
     def get_H_positive(self):
-        return self.W.t() @ (self.W @ self.H) ** (self.b - 1)
+        return self.W.data.t() @ (self.W.data @ self.H.data) ** (self.b - 1)
 
     def loss_fn(self, predict, target):
         return Beta_divergence(predict, target, beta=self.b)
 
 
-class NMFD(_NMF):
+class _NMFD(_NMF):
     """
     NMF deconvolution model.
     """
 
-    def __init__(self, Vshape, R, T=5, W=None, H=None, fix_W=False, fix_H=False):
+    def __init__(self, Vshape, R, T=1, W=None, H=None, fix_W=False, fix_H=False):
         """
 
         :param Vshape: Shape of the target matrix.
@@ -236,18 +226,42 @@ class NMFD(_NMF):
             H = (R, M)
         super().__init__(K, M, R, W, H, fix_W, fix_H)
 
-    def _update_W(self, VV):
-        expand_H = torch.stack([F.pad(self.H[:, :self.M - j], (j, 0)) for j in range(self.T)], dim=2)
-        upper = VV @ expand_H
-        lower = expand_H.sum(1, keepdim=True)
-        self.W *= (upper / lower).transpose(0, 1)
+    def conv(self, w, h):
+        return F.conv1d(h[None, :], w.flip(2), padding=self.T - 1)[0, :, :self.M]
 
-    def _update_H(self, VV):
-        expand_SonV = torch.stack([F.pad(VV[:, j:], (0, j)) for j in range(self.T)], dim=0)
-        Wt = self.W.transpose(0, 2)
-        upper = Wt @ expand_SonV  # (T, R, M)
-        lower = Wt.sum(2, keepdim=True)
-        self.H *= torch.mean(upper / lower, 0)
+    def reconstruct(self):
+        return self.conv(self.W, self.H)
 
-    def _reconstruct(self, W, H):
-        return F.conv1d(H[None, :], W.flip(2), padding=self.T - 1)[0, :, :self.M]
+
+class NMFD_KL(_NMFD):
+    """
+    NMF deconvolution model.
+    """
+
+    def get_W_positive(self):
+        return self.H.data.sum(1, keepdim=True).t()[..., None]
+
+    def get_H_positive(self):
+        return self.W.data.sum(0).sum(1, keepdim=True)
+
+    def loss_fn(self, predict, target):
+        return KL_divergence(predict, target)
+
+
+class NMFD_L2(_NMFD):
+    """
+    NMF deconvolution model.
+    """
+
+    def get_W_positive(self):
+        expand_H = torch.stack([F.pad(self.H.data[:, :self.M - j], (j, 0)) for j in range(self.T)], dim=2)
+        tmp = self.conv(self.W.data, self.H.data) @ expand_H
+        return tmp.transpose(0, 1)
+
+    def get_H_positive(self):
+        V = self.conv(self.W.data, self.H.data)
+        expand_V = torch.stack([F.pad(V[:, j:], (0, j)) for j in range(self.T)], dim=0)
+        return (self.W.data.transpose(0, 2) @ expand_V).sum(0)
+
+    def loss_fn(self, predict, target):
+        return Euclidean(predict, target)
