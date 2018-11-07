@@ -17,9 +17,9 @@ if __name__ == '__main__':
     S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()
     R = 4
     T = 10
-    max_iter = 200
+    max_iter = 50
 
-    model = NMF(R, 'random', solver='mu', max_iter=max_iter, verbose=True, beta_loss=0)
+    model = NMF(R, 'random', solver='mu', max_iter=max_iter, verbose=True, beta_loss=.5)
     start = time()
     W = model.fit_transform(S.numpy())
     print(model.reconstruction_err_, model.n_iter_ / (time() - start))
@@ -40,9 +40,8 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.show()
 
-
-    S = S.cuda()
-    net = NMF_Beta(S.shape, R).cuda()
+    #S = S.cuda()
+    net = NMF_Beta(S.shape, R, beta=.5)
 
     a = time()
     for i in range(max_iter):
