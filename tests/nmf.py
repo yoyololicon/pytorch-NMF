@@ -1,25 +1,11 @@
 from operator import mul
 from functools import reduce
 import time
-import numpy as np
 
 import torch
 import torch.nn.functional as F
 
 eps = 1.19209e-07
-
-
-def squared_norm(x):
-    x = x.view(-1)
-    return x @ x
-
-
-def norm(x):
-    return squared_norm(x).sqrt()
-
-
-def trace_dot(X, Y):
-    return X.view(-1) @ Y.view(-1)
 
 
 def _beta_divergence(X, W, H, beta):
@@ -259,7 +245,7 @@ class NMF(torch.nn.Module):
                                                                       WtW)
                 neg = positive_comps - self.H.grad.data
                 self.H.data.mul_(neg / positive_comps)
-                #self.H.data.add_(- self.H.data * self.H.grad.data / positive_comps)
+                # self.H.data.add_(- self.H.data * self.H.grad.data / positive_comps)
 
                 # These values will be recomputed since H changed
                 H_sum, HHt = None, None
@@ -291,6 +277,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     # torch.set_flush_denormal(True)
+    # torch.set_default_tensor_type(torch.DoubleTensor)
 
     y, sr = librosa.load(
         '/media/ycy/Shared/Datasets/DSD100subset/Sources/Test/005 - Angela Thomas Wade - Milk Cow Blues/drums.wav')
@@ -300,7 +287,7 @@ if __name__ == '__main__':
     R = 4
     max_iter = 1000
 
-    net = NMF(S, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
+    net = NMF(S, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2)
     start = time.time()
     n_iter = net.fit()
     print(n_iter / (time.time() - start))

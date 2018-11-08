@@ -1,271 +1,235 @@
 from torch import nn
-from .utils import *
 from .metrics import *
 
 import collections
+from time import time
 
 
-class _NMF(nn.Module):
-    """
-    This is the base class for any NMF model.
+def _beta_loss_to_float(beta_loss):
+    allowed_beta_loss = {'frobenius': 2,
+                         'kullback-leibler': 1,
+                         'itakura-saito': 0}
+    if isinstance(beta_loss, str) and beta_loss in allowed_beta_loss:
+        beta_loss = allowed_beta_loss[beta_loss]
 
-    .. attribute:: W
+    return beta_loss
 
-        Basis matrix -- the first matrix factor in standard factorization
 
-    .. attribute:: H
+class NMF(nn.Module):
 
-        Mixture matrix -- the second matrix factor in standard factorization
-    """
-
-    def __init__(self, K, M, R, W, H, fix_W, fix_H):
-        """
-        Construct generic NMF model.
-
-        :param K: First dimension of the target matrix.
-        :param M: Second dimension of the target matrix.
-        :param R: Number of components.
-        :param W: Can be a tuple specify each dimension of Basis Matrix W,
-            or a torch.Tensor or np.ndarray as initial value.
-        :param H: Can be a tuple specify each dimension of Mixture Matrix H,
-            or a torch.Tensor or np.ndarray as initial value.
-        :param fix_W: Whether to fix W or not.
-        :param fix_H: Whether to fix H or not.
-        """
+    def __init__(self, Xshape, n_components=None, init_W=None, init_H=None, beta_loss='frobenius', tol=1e-4,
+                 max_iter=200, verbose=0, update_W=True, update_H=True):
         super().__init__()
-        self.K = K
-        self.M = M
-        self.R = R
-        if isinstance(W, collections.Iterable):
-            init_W = torch.Tensor(*W)
+        self.K, self.M = Xshape
+        self.beta_loss = _beta_loss_to_float(beta_loss)
+        self.tol = tol
+        self.max_iter = max_iter
+        self.verbose = verbose
+        if not n_components:
+            self.n_components = self.K
         else:
-            init_W = return_torch(W)
-            self.fix_W = fix_W
+            self.n_components = n_components
 
-        if isinstance(H, collections.Iterable):
-            init_H = torch.Tensor(*H)
+        if init_W is None:
+            init_W = torch.Tensor(self.K, self.n_components)
+            update_W = True
         else:
-            init_H = return_torch(H)
-            self.fix_H = fix_H
+            init_W = torch.Tensor(init_W)
+        self.W = torch.nn.Parameter(init_W, requires_grad=update_W)
 
-        self.W = nn.Parameter(init_W, requires_grad=not fix_W)
-        self.H = nn.Parameter(init_H, requires_grad=not fix_H)
-        self.reset_weight()
+        if init_H is None:
+            init_H = torch.Tensor(self.n_components, self.M)
+            update_H = True
+        else:
+            init_H = torch.Tensor(init_H)
+        self.H = torch.nn.Parameter(init_H, requires_grad=update_H)
 
-    def reset_weight(self):
-        """
-        Initialize the value of weight equally sample from 0~1 when it's not fixed.
-
-        :return: None.
-        """
+    def random_weight(self, mean):
+        avg = torch.sqrt(mean / self.n_components)
         for param in self.parameters():
             if param.requires_grad:
-                param.data.uniform_()
+                param.data.normal_(avg, avg / 2).abs_()
 
-    def loss_fn(self, predict, target):
-        """
+    def forward(self, H):
+        return self.W @ H
 
-        :return: loss
-        """
-        raise NotImplementedError
+    def get_W_positive(self, WH, H_sum=None):
+        H = self.H.data
+        if self.beta_loss == 1:
+            if H_sum is None:
+                H_sum = H.sum(1)  # shape(n_components, )
+            denominator = H_sum[None, :]
+        else:
+            if self.beta_loss != 2:
+                WH = WH ** (self.beta_loss - 1)
+            WHHt = WH @ H.t()
+            denominator = WHHt
 
-    def forward(self, V):
-        """
-        Fit the model based on target matrix V.
+        return denominator, H_sum
 
-        :param V: Target matrix.
-        :param n_iter: Number of iterations.
-        :return: W, H.
-        """
-        V_tilde = self.reconstruct()
-        loss = self.loss_fn(V_tilde, V)
-        return V_tilde, loss
-
-    def update_W(self):
-        """
-        Update mechanism for Basis Matrix W.
-
-        :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
-        :return: updated W.
-        """
-        pos = self.get_W_positive()
-        self._mu_update(self.W, pos)
-        return self.W
-
-    def update_H(self):
-        """
-        Update mechanism for Mixture Matrix H.
-
-        :param VV: Element-wise ratio of the target matrix and the reconstructed matrix.
-        :return: updated H.
-        """
-        pos = self.get_H_positive()
-        self._mu_update(self.H, pos)
-        return self.H
-
-    def get_W_positive(self):
-        raise NotImplementedError
-
-    def get_H_positive(self):
-        raise NotImplementedError
+    def get_H_positive(self, WH, W_sum=None):
+        W = self.W.data
+        if self.beta_loss == 1:
+            if W_sum is None:
+                W_sum = W.sum(0)  # shape(n_components, )
+            denominator = W_sum[:, None]
+        else:
+            if self.beta_loss != 2:
+                WH = WH ** (self.beta_loss - 1)
+            WtWH = W.t() @ WH
+            denominator = WtWH
+        return denominator, W_sum
 
     def _mu_update(self, param, pos):
-        """
-
-        :param param:
-        :param pos:
-        :return: None
-        """
         if param.grad is None:
             return
         neg = pos - param.grad.data
         param.data.mul_(neg / pos)
 
-    def reconstruct(self):
-        return self.W @ self.H
-
-
-class NMF_L2(_NMF):
-    """
-    Standard NMF model.
-    """
-
-    def __init__(self, Vshape, R, W=None, H=None, fix_W=False, fix_H=False):
-        """
-        :param Vshape: Shape of the target matrix.
-        :type Vshape: tuple.
-    
-        :param R: Number of components.
-        :param W: A torch.Tensor or np.ndarray as initial value or None.
-        :param H: A torch.Tensor or np.ndarray as initial value or None.
-        :param fix_W: Whether to fix W or not.
-        :param fix_H: Whether to fix H or not.
-        """
-        K, M = Vshape
-        if W is None:
-            W = (K, R)
-        if H is None:
-            H = (R, M)
-        super().__init__(K, M, R, W, H, fix_W, fix_H)
-
-    def get_W_positive(self):
-        return self.W.data @ self.H.data @ self.H.data.t()
-
-    def get_H_positive(self):
-        return self.W.data.t() @ self.W.data @ self.H.data
+    def _2sqrt_error(self, x):
+        return (x * 2).sqrt().item()
 
     def loss_fn(self, predict, target):
-        return Euclidean(predict, target)
+        return Beta_divergence(predict, target, self.beta_loss)
+
+    def _caculate_loss(self, X, backprop=True):
+        self.zero_grad()
+        V = self.forward(self.H)
+        loss = self.loss_fn(V, X)
+        if backprop:
+            loss.backward()
+        return V, loss
+
+    def fit(self, X):
+        self.random_weight(X.mean())
+        start_time = time()
+
+        V, loss = self._caculate_loss(X, False)
+        error = self._2sqrt_error(loss)
+        previous_error = error_at_init = error
+
+        H_sum, W_sum = None, None
+        for n_iter in range(1, self.max_iter + 1):
+            if self.W.requires_grad:
+                V, loss = self._caculate_loss(X)
+                positive_comps, H_sum = self.get_W_positive(V.data, H_sum)
+                self._mu_update(self.W, positive_comps)
+                W_sum = None
+
+            if self.H.requires_grad:
+                V, loss = self._caculate_loss(X)
+                positive_comps, W_sum = self.get_H_positive(V.data, W_sum)
+                self._mu_update(self.H, positive_comps)
+                H_sum = None
+
+            # test convergence criterion every 10 iterations
+            if self.tol > 0 and n_iter % 10 == 0:
+                error = self._2sqrt_error(loss)
+                if self.verbose:
+                    iter_time = time()
+                    print("Epoch %02d reached after %.3f seconds, error: %f" % (n_iter, iter_time - start_time, error))
+
+                if (previous_error - error) / error_at_init < self.tol:
+                    break
+                previous_error = error
+
+        # do not print if we have already printed in the convergence test
+        if self.verbose and (self.tol == 0 or n_iter % 10 != 0):
+            end_time = time()
+            print("Epoch %02d reached after %.3f seconds." % (n_iter, end_time - start_time))
+
+        return n_iter
+
+    def fit_transform(self, X):
+        n_iter = self.fit(X)
+        return n_iter, self.forward(self.H)
 
 
-class NMF_KL(NMF_L2):
-    """
-    Standard NMF model.
-    """
-
-    def get_W_positive(self):
-        return self.H.data.sum(1)
-
-    def get_H_positive(self):
-        return self.W.data.sum(0, keepdim=True).t()
-
-    def loss_fn(self, predict, target):
-        return KL_divergence(predict, target)
-
-
-class NMF_IS(NMF_L2):
-
-    def get_W_positive(self):
-        return (1 / (self.W.data @ self.H.data)) @ self.H.data.t()
-
-    def get_H_positive(self):
-        return self.W.data.t() @ (1 / (self.W.data @ self.H.data))
-
-    def loss_fn(self, predict, target):
-        return IS_divergence(predict, target)
-
-
-class NMF_Beta(NMF_L2):
-    def __init__(self, *args, beta=2):
-        self.b = beta
-        super().__init__(*args)
-
-    def get_W_positive(self):
-        return (self.W.data @ self.H.data) ** (self.b - 1) @ self.H.data.t()
-
-    def get_H_positive(self):
-        return self.W.data.t() @ (self.W.data @ self.H.data) ** (self.b - 1)
-
-    def loss_fn(self, predict, target):
-        return Beta_divergence(predict, target, beta=self.b)
-
-
-class _NMFD(_NMF):
+class NMFD(NMF):
     """
     NMF deconvolution model.
     """
 
-    def __init__(self, Vshape, R, T=1, W=None, H=None, fix_W=False, fix_H=False):
-        """
-
-        :param Vshape: Shape of the target matrix.
-        :type Vshape: tuple.
-
-        :param T: Size of the templates.
-        :param R: Number of components.
-        :param W: A torch.Tensor or np.ndarray as initial value or None.
-        :param H: A torch.Tensor or np.ndarray as initial value or None.
-        :param fix_W: Whether to fix W or not.
-        :param fix_H: Whether to fix H or not.
-        """
+    def __init__(self, Xshape, T=1, **kwargs):
+        super().__init__(Xshape, **kwargs)
         self.T = T
-        K, M = Vshape
-        if W is None:
-            W = (K, R, T)
-        if H is None:
-            H = (R, M)
-        super().__init__(K, M, R, W, H, fix_W, fix_H)
+        if self.W.requires_grad and len(self.W.shape) == 2:
+            self.W = torch.nn.Parameter(torch.Tensor(self.K, self.n_components, self.T))
 
-    def conv(self, w, h):
-        return F.conv1d(h[None, :], w.flip(2), padding=self.T - 1)[0, :, :self.M]
+    def forward(self, H):
+        return F.conv1d(H[None, :], self.W.flip(2), padding=self.T - 1)[0, :, :H.shape[1]]
 
-    def reconstruct(self):
-        return self.conv(self.W, self.H)
+    def random_weight(self, mean):
+        avg = torch.sqrt(mean / self.n_components / self.T)
+        for param in self.parameters():
+            if param.requires_grad:
+                param.data.normal_(avg, avg / 2).abs_()
+
+    def get_W_positive(self, WH, H_sum=None):
+        H = self.H.data
+        if self.beta_loss == 1:
+            if H_sum is None:
+                H_sum = H.sum(1)  # shape(n_components, )
+            denominator = H_sum[None, :, None]
+        else:
+            if self.beta_loss != 2:
+                WH = WH ** (self.beta_loss - 1)
+            Ht = F.pad(H, pad=(self.T - 1, 0)).unfold(1, self.M, 1).transpose(1, 2)
+            WHHt = WH @ Ht
+            denominator = WHHt.transpose(0, 1).flip(2)
+
+        return denominator, H_sum
+
+    def get_H_positive(self, WH, W_sum=None):
+        W = self.W.data
+        if self.beta_loss == 1:
+            if W_sum is None:
+                W_sum = W.sum((0, 2))  # shape(n_components, )
+            denominator = W_sum[:, None]
+        else:
+            if self.beta_loss != 2:
+                WH = WH ** (self.beta_loss - 1)
+            WtWH = F.conv1d(WH[None, :], W.transpose(0, 1), padding=self.T - 1)[0, :, -self.M:]
+            denominator = WtWH
+        return denominator, W_sum
 
 
-class NMFD_KL(_NMFD):
-    """
-    NMF deconvolution model.
-    """
+if __name__ == '__main__':
+    import librosa
+    from librosa import display
+    import numpy as np
+    import matplotlib.pyplot as plt
 
-    def get_W_positive(self):
-        return self.H.data.sum(1, keepdim=True).t()[..., None]
+    # torch.set_flush_denormal(True)
+    # torch.set_default_tensor_type(torch.DoubleTensor)
 
-    def get_H_positive(self):
-        return self.W.data.sum(0).sum(1, keepdim=True)
+    y, sr = librosa.load(
+        '/media/ycy/Shared/Datasets/DSD100subset/Sources/Test/005 - Angela Thomas Wade - Milk Cow Blues/drums.wav')
+    y = torch.from_numpy(y)
+    windowsize = 2048
+    S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()
+    R = 4
+    max_iter = 1000
 
-    def loss_fn(self, predict, target):
-        return KL_divergence(predict, target)
+    net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2)
+    start = time()
+    n_iter = net.fit(S)
+    print(n_iter / (time() - start))
 
+    W = net.W
+    H = net.H
+    V = W @ H
 
-class NMFD_Beta(_NMFD):
-    """
-    NMF deconvolution model.
-    """
-
-    def __init__(self, *args, beta=2):
-        self.b = beta
-        super().__init__(*args)
-
-    def get_W_positive(self):
-        expand_H = torch.stack([F.pad(self.H.data[:, :self.M - j], (j, 0)) for j in range(self.T)], dim=2)
-        tmp = self.conv(self.W.data, self.H.data) ** (self.b - 1) @ expand_H
-        return tmp.transpose(0, 1)
-
-    def get_H_positive(self):
-        V = self.conv(self.W.data, self.H.data) ** (self.b - 1)
-        expand_V = torch.stack([F.pad(V[:, j:], (0, j)) for j in range(self.T)], dim=0)
-        return (self.W.data.transpose(0, 2) @ expand_V).sum(0)
-
-    def loss_fn(self, predict, target):
-        return Beta_divergence(predict, target, self.b)
+    plt.subplot(3, 1, 1)
+    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy(), ref=np.max), y_axis='log')
+    plt.title('Template ')
+    plt.subplot(3, 1, 2)
+    display.specshow(H.detach().cpu().numpy(), x_axis='time')
+    plt.colorbar()
+    plt.title('Activations')
+    plt.subplot(3, 1, 3)
+    display.specshow(librosa.amplitude_to_db(V.detach().cpu().numpy(), ref=np.max), y_axis='log', x_axis='time')
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Reconstructed spectrogram')
+    plt.tight_layout()
+    plt.show()
