@@ -7,7 +7,7 @@ eps = 1e-8
 
 
 def KL_divergence(predict, target):
-    return torch.sum(target * torch.log(target / predict)) - target.sum() + predict.sum()
+    return (target * (target / predict).log()).sum() - target.sum() + predict.sum()
 
 
 def Euclidean(predict, target):
@@ -16,7 +16,7 @@ def Euclidean(predict, target):
 
 def IS_divergence(predict, target):
     div = target / predict
-    return div.sum() - torch.log(div).sum() - reduce(mul, target.shape)
+    return div.sum() - div.log().sum() - reduce(mul, target.shape)
 
 
 def Beta_divergence(predict, target, beta=2.):
@@ -28,5 +28,5 @@ def Beta_divergence(predict, target, beta=2.):
         return IS_divergence(predict, target)
     else:
         bminus = beta - 1
-        return (torch.sum(target ** beta) + bminus * torch.sum(predict ** beta) - beta * torch.sum(
-            target * predict ** bminus)) / (beta * bminus)
+        return ((target ** beta).sum() + bminus * (predict ** beta).sum() - beta * (
+                target * predict ** bminus).sum()) / (beta * bminus)

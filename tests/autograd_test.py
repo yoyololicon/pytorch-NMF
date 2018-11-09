@@ -24,7 +24,7 @@ if __name__ == '__main__':
     max_iter = 500
 
     S = S.cuda()
-    net = NMFD(S.shape, T, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2, tol=2e-5).cuda()
+    net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2, initial_mean=S.mean()).cuda()
     #net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
     niter, V = net.fit_transform(S)
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     H = net.H
 
     plt.subplot(3, 1, 1)
-    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy().mean(2), ref=np.max), y_axis='log', sr=sr)
+    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy(), ref=np.max), y_axis='log', sr=sr)
     plt.title('Template ')
     plt.subplot(3, 1, 2)
     display.specshow(H.detach().cpu().numpy(), x_axis='time', hop_length=1024, sr=sr)

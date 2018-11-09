@@ -59,7 +59,7 @@ python setup.py install
 
 ## Requirements
 
-* Pytorch == 0.4.1
+* PyTorch == 0.4.1
 
 ## Tips
 

@@ -1,4 +1,5 @@
 from torch import nn
+from math import sqrt
 from .metrics import Beta_divergence
 from .utils import *
 from time import time
@@ -29,7 +30,7 @@ class NMF(nn.Module):
     """
 
     def __init__(self, Xshape, n_components=None, init_W=None, init_H=None, beta_loss='frobenius', tol=1e-4,
-                 max_iter=200, verbose=0, update_W=True, update_H=True):
+                 max_iter=200, verbose=0, update_W=True, update_H=True, initial_mean=1):
         """
 
         :param Xshape: Target matrix size.
@@ -49,30 +50,33 @@ class NMF(nn.Module):
         self.tol = tol
         self.max_iter = max_iter
         self.verbose = verbose
+        self.initial_mean = initial_mean
         if not n_components:
             self.n_components = self.K
         else:
             self.n_components = n_components
 
+        avg = sqrt(initial_mean / self.n_components)
+
         if init_W is None:
-            init_W = torch.Tensor(self.K, self.n_components)
+            init_W = torch.randn(self.K, self.n_components).mul_(avg).abs_()
             update_W = True
         else:
             init_W = torch.Tensor(init_W)
         self.W = torch.nn.Parameter(init_W, requires_grad=update_W)
 
         if init_H is None:
-            init_H = torch.Tensor(self.n_components, self.M)
+            init_H = torch.randn(self.n_components, self.M).mul_(avg).abs_()
             update_H = True
         else:
             init_H = torch.Tensor(init_H)
         self.H = torch.nn.Parameter(init_H, requires_grad=update_H)
 
-    def random_weight(self, mean):
-        avg = torch.sqrt(mean / self.n_components)
+    def reset_weights(self, mean=1):
+        avg = sqrt(mean / self.n_components)
         for param in self.parameters():
             if param.requires_grad:
-                param.data.normal_(avg, avg / 2).abs_()
+                param.data.normal_().mul_(avg).abs_()
 
     def forward(self, H):
         return self.W @ H
@@ -125,7 +129,6 @@ class NMF(nn.Module):
         return V, loss
 
     def fit(self, X):
-        self.random_weight(X.mean())
         start_time = time()
 
         V, loss = self._caculate_loss(X, False)
@@ -188,6 +191,7 @@ class NMFD(NMF):
         Template matrix.
 
     """
+
     def __init__(self, Xshape, T=1, **kwargs):
         """
 
@@ -197,15 +201,17 @@ class NMFD(NMF):
         """
         super().__init__(Xshape, **kwargs)
         self.T = T
+        avg = sqrt(self.initial_mean / self.n_components / T)
         if self.W.requires_grad and len(self.W.shape) == 2:
-            self.W = torch.nn.Parameter(torch.Tensor(self.K, self.n_components, self.T))
+            init_W = torch.randn(self.K, self.n_components, T).mul_(avg).abs_()
+            self.W = torch.nn.Parameter(init_W)
 
     def forward(self, H):
         H = F.pad(H, (self.T - 1, 0))
         return F.conv1d(H[None, :], self.W.flip(2))[0]
 
     def random_weight(self, mean):
-        avg = torch.sqrt(mean / self.n_components / self.T)
+        avg = sqrt(mean / self.n_components / self.T)
         for param in self.parameters():
             if param.requires_grad:
                 param.data.normal_(avg, avg / 2).abs_()
