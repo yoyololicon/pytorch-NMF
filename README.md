@@ -1,16 +1,19 @@
 # Non-negative Matrix Fatorization in PyTorch
 
-PyTorch is not only a good deep learning framework, but also a fast tool when it comes to matrix operations and convolution.
+PyTorch is not only a good deep learning framework, but also a fast tool when it comes to matrix operations and convolutions on large data.
 A great example is [PyTorchWavelets](http://github.com/tomrunia/PyTorchWavelets).
  
-In this package I implement basic NMF and NMFD module base on `torch.nn.Module`, so the models can be moved freely
- among CPU/GPU devices.
+In this package I implement basic NMF and NMFD module minimizing beta-divergence using multiplicative update rules, 
+and is based on `torch.nn.Module` so the models can be moved freely among CPU/GPU devices.
+Part of the multiplier is obtained via `torch.autograd` so the amount of codes is reduced and easy to maintain 
+(only the denominator is calculated).
 
-More features and different methods will be add in the future, and will compare how fast it can against scipy based implementations like [nimfa](https://github.com/marinkaz/nimfa).
+The interface is similar to `sklearn.decomposition.NMF` with some extra options.
 
-# Usage
+## Usage
 
 Here is a short example of decompose a spectrogram.
+
 ```python
 import torch
 import librosa
@@ -23,19 +26,26 @@ windowsize = 2048
 S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt().cuda()
 
 R = 8   # number of components
-n_iter = 100    # number of iterations
 
-net = NMF(S.shape, R=R).cuda()    # run extremely faster on gpu
-comps, acts = net(S, n_iter)      # fit to target matrix S
-V = net.reconstruct(comps, acts)  # the reconstructed matrix, in NMF is equal to comps @ acts
-print(KL_divergence(S, V))        # KL divergence to S
+net = NMF(S.shape, n_components=R, verbose=True, beta_loss='kullback-leibler').cuda()
+# run extremely fast on gpu
+_, V = net.fit_transform(S)      # fit to target matrix S
+print(KL_divergence(V, S))        # KL divergence to S
 ```
 A more detailed version can be found [here](tests/librosa_example.py), which redo this [example](https://librosa.github.io/librosa/generated/librosa.decompose.decompose.html#librosa.decompose.decompose)
 with NMFD.
 
 ![](tests/librosa_example.png)
 
-## Install
+## Compare to sklearn
+
+The barchart show the time cost per iteration with different beta-divergence.
+It is clear that pytorch-based NMF is faster than scipy-based NMF (sklearn) when beta != 2 (Euclidean distance), 
+and run even faster when computation is done on GPU. The test is conducted on a Acer E5 laptop with i5-7200U CPU and GTX 950M GPU.
+
+![](tests/performance.png) 
+
+## Installation
 
 Using pip:
 ```
@@ -49,5 +59,16 @@ python setup.py install
 
 ## Requirements
 
-* Numpy
-* Pytorch
+* Pytorch == 0.4.1
+
+## Tips
+
+* If you notice significant slow down when operating on CPU, please flush denormal numbers by `
+torch.set_flush_denormal(True)`.
+* Replace zeros in target matrix with small value to avoid overflow.
+
+## TODO
+
+- [ ] Support sparse matrix.
+- [ ] Regulariztion.
+- [ ] NNDSVD initialization.
