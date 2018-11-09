@@ -15,9 +15,34 @@ def _beta_loss_to_float(beta_loss):
 
 
 class NMF(nn.Module):
+    """
+    Basic NMF model with beta- divergence as loss function.
+
+    Attributes
+
+    H : Tensor, [n_components, n_samples]
+        Activation matrix.
+
+    W : Tensor, [n_features, n_compoments]
+        Template matrix.
+
+    """
 
     def __init__(self, Xshape, n_components=None, init_W=None, init_H=None, beta_loss='frobenius', tol=1e-4,
                  max_iter=200, verbose=0, update_W=True, update_H=True):
+        """
+
+        :param Xshape: Target matrix size.
+        :param n_components:
+        :param init_W:
+        :param init_H:
+        :param beta_loss:
+        :param tol:
+        :param max_iter:
+        :param verbose:
+        :param update_W:
+        :param update_H:
+        """
         super().__init__()
         self.K, self.M = Xshape
         self.beta_loss = _beta_loss_to_float(beta_loss)
@@ -153,9 +178,23 @@ class NMF(nn.Module):
 class NMFD(NMF):
     """
     NMF deconvolution model.
-    """
 
+    Attributes
+
+    H : Tensor, [n_components, n_samples]
+        Activation matrix.
+
+    W : Tensor, [n_features, n_compoments, n_timesteps]
+        Template matrix.
+
+    """
     def __init__(self, Xshape, T=1, **kwargs):
+        """
+
+        :param Xshape: Target matrix size.
+        :param T: Size of template.
+        :param kwargs: Other arguments that pass to NMF.
+        """
         super().__init__(Xshape, **kwargs)
         self.T = T
         if self.W.requires_grad and len(self.W.shape) == 2:
