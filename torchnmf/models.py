@@ -162,7 +162,8 @@ class NMFD(NMF):
             self.W = torch.nn.Parameter(torch.Tensor(self.K, self.n_components, self.T))
 
     def forward(self, H):
-        return F.conv1d(H[None, :], self.W.flip(2), padding=self.T - 1)[0, :, :H.shape[1]]
+        H = F.pad(H, (self.T - 1, 0))
+        return F.conv1d(H[None, :], self.W.flip(2))[0]
 
     def random_weight(self, mean):
         avg = torch.sqrt(mean / self.n_components / self.T)
@@ -179,7 +180,8 @@ class NMFD(NMF):
         else:
             if self.beta_loss != 2:
                 WH = WH ** (self.beta_loss - 1)
-            WHHt = F.conv1d(H[:, None], WH[:, None], padding=self.T - 1)[..., :self.T]
+            H = F.pad(H, (self.T - 1, 0))
+            WHHt = F.conv1d(H[:, None], WH[:, None])
             denominator = WHHt.transpose(0, 1).flip(2)
 
         return denominator, H_sum
@@ -193,7 +195,8 @@ class NMFD(NMF):
         else:
             if self.beta_loss != 2:
                 WH = WH ** (self.beta_loss - 1)
-            WtWH = F.conv1d(WH[None, :], W.transpose(0, 1), padding=self.T - 1)[0, :, -self.M:]
+            WH = F.pad(WH, (0, self.T - 1))
+            WtWH = F.conv1d(WH[None, :], W.transpose(0, 1))[0]
             denominator = WtWH
         return denominator, W_sum
 
