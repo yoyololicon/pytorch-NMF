@@ -19,7 +19,7 @@ def IS_divergence(predict, target):
     return div.sum() - div.log().sum() - reduce(mul, target.shape)
 
 
-def Beta_divergence(predict, target, beta=2.):
+def Beta_divergence(predict, target, beta=2):
     if beta == 2:
         return Euclidean(predict, target)
     elif beta == 1:
@@ -28,5 +28,5 @@ def Beta_divergence(predict, target, beta=2.):
         return IS_divergence(predict, target)
     else:
         bminus = beta - 1
-        return ((target ** beta).sum() + bminus * (predict ** beta).sum() - beta * (
-                target * predict ** bminus).sum()) / (beta * bminus)
+        return (target.pow(beta).sum() + bminus * predict.pow(beta).sum() - beta * (
+                    target * predict.pow(bminus)).sum()) / (beta * bminus)

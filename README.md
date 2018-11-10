@@ -70,5 +70,5 @@ torch.set_flush_denormal(True)`.
 ## TODO
 
 - [ ] Support sparse matrix.
-- [ ] Regulariztion.
+- [x] Regulariztion.
 - [ ] NNDSVD initialization.

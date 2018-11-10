@@ -27,7 +27,8 @@ if __name__ == '__main__':
 
     Snumpy = S.numpy()
     Scuda = S.cuda()
-    mean = S.mean()
+
+    net = torchNMF(S.shape, R)
 
     for b in betas:
         print('beta =', b)
@@ -38,16 +39,16 @@ if __name__ == '__main__':
         print('sklearn', rate)
         sk.append(rate)
 
-        net = torchNMF(S.shape, n_components=R, max_iter=max_iter, beta_loss=b, verbose=True, initial_mean=mean)
+        net.cpu()
         start = time()
-        niter = net.fit(S)
+        niter = net.fit(S, max_iter=max_iter, beta_loss=b, verbose=True)
         rate = (time() - start) /niter
         print('torch', rate)
         tch.append(rate)
 
-        net = torchNMF(S.shape, n_components=R, max_iter=max_iter, beta_loss=b, verbose=True, initial_mean=mean).cuda()
+        net.cuda()
         start = time()
-        niter = net.fit(Scuda)
+        niter = net.fit(Scuda, max_iter=max_iter, beta_loss=b, verbose=True)
         rate = (time() - start) /niter
         print('torch + cuda', rate)
         tchcuda.append(rate)

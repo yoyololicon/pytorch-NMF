@@ -21,19 +21,19 @@ if __name__ == '__main__':
     S[S == 0] = 1e-8
     R = 88
     T = 5
-    max_iter = 500
+    max_iter = 200
 
     S = S.cuda()
-    net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2, initial_mean=S.mean()).cuda()
+    net = NMFD(S.shape, T, n_components=R).cuda()
     #net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
-    niter, V = net.fit_transform(S)
+    niter, V = net.fit_transform(S, verbose=True, beta_loss=1.5, max_iter=max_iter, alpha=0.5, l1_ratio=0.2)
     net.sort()
     W = net.W
     H = net.H
 
     plt.subplot(3, 1, 1)
-    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy(), ref=np.max), y_axis='log', sr=sr)
+    display.specshow(librosa.amplitude_to_db(W.detach().cpu().numpy().mean(2), ref=np.max), y_axis='log', sr=sr)
     plt.title('Template ')
     plt.subplot(3, 1, 2)
     display.specshow(H.detach().cpu().numpy(), x_axis='time', hop_length=1024, sr=sr)

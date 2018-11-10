@@ -29,146 +29,161 @@ class NMF(nn.Module):
 
     """
 
-    def __init__(self, Xshape, n_components=None, init_W=None, init_H=None, beta_loss='frobenius', tol=1e-4,
-                 max_iter=200, verbose=0, update_W=True, update_H=True, initial_mean=1):
+    def __init__(self, Xshape, n_components=None):
         """
 
         :param Xshape: Target matrix size.
         :param n_components:
-        :param init_W:
-        :param init_H:
-        :param beta_loss:
-        :param tol:
-        :param max_iter:
-        :param verbose:
-        :param update_W:
-        :param update_H:
         """
         super().__init__()
         self.K, self.M = Xshape
-        self.beta_loss = _beta_loss_to_float(beta_loss)
-        self.tol = tol
-        self.max_iter = max_iter
-        self.verbose = verbose
-        self.initial_mean = initial_mean
         if not n_components:
             self.n_components = self.K
         else:
             self.n_components = n_components
 
-        avg = sqrt(initial_mean / self.n_components)
+        self.W = torch.nn.Parameter(torch.rand(self.K, self.n_components))
+        self.H = torch.nn.Parameter(torch.rand(self.n_components, self.M))
 
-        if init_W is None:
-            init_W = torch.randn(self.K, self.n_components).mul_(avg).abs_()
-            update_W = True
-        else:
-            init_W = torch.Tensor(init_W)
-        self.W = torch.nn.Parameter(init_W, requires_grad=update_W)
-
-        if init_H is None:
-            init_H = torch.randn(self.n_components, self.M).mul_(avg).abs_()
-            update_H = True
-        else:
-            init_H = torch.Tensor(init_H)
-        self.H = torch.nn.Parameter(init_H, requires_grad=update_H)
-
-    def reset_weights(self, mean=1):
-        avg = sqrt(mean / self.n_components)
-        for param in self.parameters():
-            if param.requires_grad:
-                param.data.normal_().mul_(avg).abs_()
+    def _random_weight(self, param, mean):
+        avg = torch.sqrt(mean / self.n_components)
+        param.data.normal_().mul_(avg).abs_()
 
     def forward(self, H):
         return self.W @ H
 
-    def _get_W_positive(self, WH, H_sum=None):
+    def _get_W_positive(self, WH, beta, H_sum=None):
         H = self.H.data
-        if self.beta_loss == 1:
+        if beta == 1:
             if H_sum is None:
                 H_sum = H.sum(1)  # shape(n_components, )
             denominator = H_sum[None, :]
         else:
-            if self.beta_loss != 2:
-                WH = WH ** (self.beta_loss - 1)
+            if beta != 2:
+                WH = WH.pow(beta - 1)
             WHHt = WH @ H.t()
             denominator = WHHt
 
         return denominator, H_sum
 
-    def _get_H_positive(self, WH, W_sum=None):
+    def _get_H_positive(self, WH, beta, W_sum=None):
         W = self.W.data
-        if self.beta_loss == 1:
+        if beta == 1:
             if W_sum is None:
                 W_sum = W.sum(0)  # shape(n_components, )
             denominator = W_sum[:, None]
         else:
-            if self.beta_loss != 2:
-                WH = WH ** (self.beta_loss - 1)
+            if beta != 2:
+                WH = WH.pow(beta - 1)
             WtWH = W.t() @ WH
             denominator = WtWH
         return denominator, W_sum
 
-    def _mu_update(self, param, pos):
+    def _mu_update(self, param, pos, gamma, l1_reg, l2_reg):
         if param.grad is None:
             return
-        neg = pos - param.grad.data
-        param.data.mul_(neg / pos)
+        multiplier = pos - param.grad.data
+        if l1_reg > 0:
+            pos.add_(l1_reg)
+        if l2_reg > 0:
+            if pos.shape != param.data.shape:
+                pos = pos + l2_reg * param.data
+            else:
+                pos.add_(l2_reg * param.data)
+        multiplier.div_(pos)
+        if gamma != 1:
+            multiplier.pow_(gamma)
+        param.data.mul_(multiplier)
 
     def _2sqrt_error(self, x):
-        return (x * 2).sqrt().item()
+        return sqrt(x * 2)
 
-    def _loss_fn(self, predict, target):
-        return Beta_divergence(predict, target, self.beta_loss)
-
-    def _caculate_loss(self, X, backprop=True):
+    def _caculate_loss(self, X, beta, backprop=True):
         self.zero_grad()
         V = self.forward(self.H)
-        loss = self._loss_fn(V, X)
+        loss = Beta_divergence(V, X, beta)
         if backprop:
             loss.backward()
         return V, loss
 
-    def fit(self, X):
-        start_time = time()
+    def fit(self,
+            X,
+            W=None,
+            H=None,
+            update_W=True,
+            update_H=True,
+            beta_loss='frobenius',
+            tol=1e-4,
+            max_iter=200,
+            verbose=0,
+            initial='random',
+            alpha=0,
+            l1_ratio=0
+            ):
+        if W is None:
+            if initial == 'random':
+                self._random_weight(self.W, X.mean())
+        else:
+            self.W.data.copy_(W)
+            self.W.requires_grad = update_W
 
-        V, loss = self._caculate_loss(X, False)
-        error = self._2sqrt_error(loss)
+        if H is None:
+            if initial == 'random':
+                self._random_weight(self.H, X.mean())
+        else:
+            self.H.data.copy_(H)
+            self.H.requires_grad = update_H
+        beta = _beta_loss_to_float(beta_loss)
+
+        if beta < 1:
+            gamma = 1 / (2 - beta)
+        elif beta > 2:
+            gamma = 1 / (beta - 1)
+        else:
+            gamma = 1
+
+        l1_reg = alpha * l1_ratio
+        l2_reg = alpha * (1 - l1_ratio)
+
+        V, loss = self._caculate_loss(X, beta, False)
+        error = self._2sqrt_error(loss.item())
         previous_error = error_at_init = error
 
+        start_time = time()
         H_sum, W_sum = None, None
-        for n_iter in range(1, self.max_iter + 1):
+        for n_iter in range(1, max_iter + 1):
             if self.W.requires_grad:
-                V, loss = self._caculate_loss(X)
-                positive_comps, H_sum = self._get_W_positive(V.data, H_sum)
-                self._mu_update(self.W, positive_comps)
+                V, loss = self._caculate_loss(X, beta)
+                positive_comps, H_sum = self._get_W_positive(V.data, beta, H_sum)
+                self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
                 W_sum = None
 
             if self.H.requires_grad:
-                V, loss = self._caculate_loss(X)
-                positive_comps, W_sum = self._get_H_positive(V.data, W_sum)
-                self._mu_update(self.H, positive_comps)
+                V, loss = self._caculate_loss(X, beta)
+                positive_comps, W_sum = self._get_H_positive(V.data, beta, W_sum)
+                self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
                 H_sum = None
 
             # test convergence criterion every 10 iterations
-            if self.tol > 0 and n_iter % 10 == 0:
-                error = self._2sqrt_error(loss)
-                if self.verbose:
+            if tol > 0 and n_iter % 10 == 0:
+                error = self._2sqrt_error(loss.item())
+                if verbose:
                     iter_time = time()
                     print("Epoch %02d reached after %.3f seconds, error: %f" % (n_iter, iter_time - start_time, error))
 
-                if (previous_error - error) / error_at_init < self.tol:
+                if (previous_error - error) / error_at_init < tol:
                     break
                 previous_error = error
 
         # do not print if we have already printed in the convergence test
-        if self.verbose and (self.tol == 0 or n_iter % 10 != 0):
+        if verbose and (tol == 0 or n_iter % 10 != 0):
             end_time = time()
             print("Epoch %02d reached after %.3f seconds." % (n_iter, end_time - start_time))
 
         return n_iter
 
-    def fit_transform(self, X):
-        n_iter = self.fit(X)
+    def fit_transform(self, *args, **kwargs):
+        n_iter = self.fit(*args, **kwargs)
         return n_iter, self.forward(self.H)
 
     def sort(self):
@@ -192,54 +207,39 @@ class NMFD(NMF):
 
     """
 
-    def __init__(self, Xshape, T=1, **kwargs):
-        """
-
-        :param Xshape: Target matrix size.
-        :param T: Size of template.
-        :param kwargs: Other arguments that pass to NMF.
-        """
-        super().__init__(Xshape, **kwargs)
+    def __init__(self, Xshape, T=1, n_components=None):
+        super().__init__(Xshape, n_components)
         self.T = T
-        avg = sqrt(self.initial_mean / self.n_components / T)
-        if self.W.requires_grad and len(self.W.shape) == 2:
-            init_W = torch.randn(self.K, self.n_components, T).mul_(avg).abs_()
-            self.W = torch.nn.Parameter(init_W)
+        self.W = torch.nn.Parameter(torch.rand(self.K, self.n_components, self.T))
 
     def forward(self, H):
         H = F.pad(H, (self.T - 1, 0))
         return F.conv1d(H[None, :], self.W.flip(2))[0]
 
-    def random_weight(self, mean):
-        avg = sqrt(mean / self.n_components / self.T)
-        for param in self.parameters():
-            if param.requires_grad:
-                param.data.normal_(avg, avg / 2).abs_()
-
-    def _get_W_positive(self, WH, H_sum=None):
+    def _get_W_positive(self, WH, beta, H_sum=None):
         H = self.H.data
-        if self.beta_loss == 1:
+        if beta == 1:
             if H_sum is None:
                 H_sum = H.sum(1)
             denominator = H_sum[None, :, None]
         else:
-            if self.beta_loss != 2:
-                WH = WH ** (self.beta_loss - 1)
+            if beta != 2:
+                WH = WH.pow(beta - 1)
             H = F.pad(H, (self.T - 1, 0))
             WHHt = F.conv1d(H[:, None], WH[:, None])
             denominator = WHHt.transpose(0, 1).flip(2)
 
         return denominator, H_sum
 
-    def _get_H_positive(self, WH, W_sum=None):
+    def _get_H_positive(self, WH, beta, W_sum=None):
         W = self.W.data
-        if self.beta_loss == 1:
+        if beta == 1:
             if W_sum is None:
                 W_sum = W.sum((0, 2))
             denominator = W_sum[:, None]
         else:
-            if self.beta_loss != 2:
-                WH = WH ** (self.beta_loss - 1)
+            if beta != 2:
+                WH = WH.pow(beta - 1)
             WH = F.pad(WH, (0, self.T - 1))
             WtWH = F.conv1d(WH[None, :], W.transpose(0, 1))[0]
             denominator = WtWH
