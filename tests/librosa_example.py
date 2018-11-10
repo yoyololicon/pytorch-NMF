@@ -15,8 +15,8 @@ if __name__ == '__main__':
     R = 8
     T = 5
 
-    net = NMFD(S.shape, T, n_components=R, verbose=True, initial_mean=S.mean(), max_iter=1000).cuda()
-    _, V = net.fit_transform(S)
+    net = NMFD(S.shape, T, n_components=R).cuda()
+    _, V = net.fit_transform(S, verbose=True)
     net.sort()
     W, H = net.W.detach().cpu().numpy(), net.H.detach().cpu().numpy()
     V = V.detach().cpu().numpy()

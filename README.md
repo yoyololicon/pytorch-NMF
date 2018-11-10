@@ -27,7 +27,7 @@ S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2
 
 R = 8   # number of components
 
-net = NMF(S.shape, n_components=R, verbose=True, beta_loss='kullback-leibler').cuda()
+net = NMF(S.shape, n_components=R).cuda()
 # run extremely fast on gpu
 _, V = net.fit_transform(S)      # fit to target matrix S
 print(KL_divergence(V, S))        # KL divergence to S
