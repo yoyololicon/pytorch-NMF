@@ -9,7 +9,7 @@ from sklearn.decomposition import NMF
 from time import time
 
 torch.set_flush_denormal(True)
-# torch.set_default_tensor_type(torch.DoubleTensor)
+#torch.set_default_tensor_type(torch.DoubleTensor)
 
 if __name__ == '__main__':
     duration = 60
@@ -20,7 +20,7 @@ if __name__ == '__main__':
     R = 88
     max_iter = 50
 
-    betas = [0, 0.5, 1, 1.5, 2]
+    betas = [0, 1, 2]
     sk = []
     tch = []
     tchcuda = []

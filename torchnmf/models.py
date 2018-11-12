@@ -153,18 +153,26 @@ class NMF(nn.Module):
         H_sum, W_sum = None, None
         for n_iter in range(1, max_iter + 1):
             if self.W.requires_grad:
+                H_status = self.H.requires_grad
+                self.H.requires_grad = False
+
                 V, loss = self._caculate_loss(X, beta)
                 positive_comps, H_sum = self._get_W_positive(V.data, beta, H_sum)
                 self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
                 W_sum = None
 
+                self.H.requires_grad = H_status
             if self.H.requires_grad:
+                W_status = self.W.requires_grad
+                self.W.requires_grad = False
+
                 V, loss = self._caculate_loss(X, beta)
                 positive_comps, W_sum = self._get_H_positive(V.data, beta, W_sum)
                 self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
                 H_sum = None
 
-            # test convergence criterion every 10 iterations
+                self.W.requires_grad = W_status
+
             if tol > 0 and n_iter % 10 == 0:
                 error = self._2sqrt_error(loss.item())
                 if verbose:
