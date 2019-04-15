@@ -4,6 +4,7 @@ from torch import nn
 from math import sqrt
 from .metrics import Beta_divergence
 from time import time
+from tqdm import tqdm
 
 
 def _beta_loss_to_float(beta_loss):
@@ -110,7 +111,7 @@ class NMF(nn.Module):
             update_W=True,
             update_H=True,
             beta_loss='frobenius',
-            tol=1e-4,
+            tol=1e-5,
             max_iter=200,
             verbose=0,
             initial='random',
@@ -147,45 +148,40 @@ class NMF(nn.Module):
         error = self._2sqrt_error(loss.item())
         previous_error = error_at_init = error
 
-        start_time = time()
         H_sum, W_sum = None, None
-        for n_iter in range(1, max_iter + 1):
-            if self.W.requires_grad:
-                self.zero_grad()
-                V = self.forward(H=self.H.detach())
-                loss = Beta_divergence(V, X, beta)
-                loss.backward()
+        with tqdm(total=max_iter) as pbar:
+            for n_iter in range(1, max_iter + 1):
+                if self.W.requires_grad:
+                    self.zero_grad()
+                    V = self.forward(H=self.H.detach())
+                    loss = Beta_divergence(V, X, beta)
+                    loss.backward()
 
-                with torch.no_grad():
-                    positive_comps, H_sum = self._get_W_positive(V, beta, H_sum)
-                    self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
-                W_sum = None
+                    with torch.no_grad():
+                        positive_comps, H_sum = self._get_W_positive(V, beta, H_sum)
+                        self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
+                    W_sum = None
 
-            if self.H.requires_grad:
-                self.zero_grad()
-                V = self.forward(W=self.W.detach())
-                loss = Beta_divergence(V, X, beta)
-                loss.backward()
+                if self.H.requires_grad:
+                    self.zero_grad()
+                    V = self.forward(W=self.W.detach())
+                    loss = Beta_divergence(V, X, beta)
+                    loss.backward()
 
-                with torch.no_grad():
-                    positive_comps, W_sum = self._get_H_positive(V, beta, W_sum)
-                    self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
-                H_sum = None
+                    with torch.no_grad():
+                        positive_comps, W_sum = self._get_H_positive(V, beta, W_sum)
+                        self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
+                    H_sum = None
 
-            if tol > 0 and n_iter % 10 == 0:
                 error = self._2sqrt_error(loss.item())
                 if verbose:
-                    iter_time = time()
-                    print("Epoch %02d reached after %.3f seconds, error: %f" % (n_iter, iter_time - start_time, error))
+                    #pbar.set_postfix(loss=error)
+                    pbar.set_description('Beta loss=%.4f' % error)
+                    pbar.update()
 
                 if (previous_error - error) / error_at_init < tol:
                     break
                 previous_error = error
-
-        # do not print if we have already printed in the convergence test
-        if verbose and (tol == 0 or n_iter % 10 != 0):
-            end_time = time()
-            print("Epoch %02d reached after %.3f seconds." % (n_iter, end_time - start_time))
 
         return n_iter
 
