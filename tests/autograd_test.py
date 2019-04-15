@@ -4,31 +4,44 @@ from torchaudio import load
 import numpy as np
 import matplotlib.pyplot as plt
 from librosa import display
-
+from scipy.io import loadmat
 from torchnmf.models import NMF, NMFD
 from time import time
 
 torch.set_flush_denormal(True)
-# torch.set_default_tensor_type(torch.DoubleTensor)
+
+
+def read_bach10_F0s(F0):
+    f = np.round(loadmat(F0)['GTF0s'] - 21).astype(int)
+    index = np.where(f >= 0)
+    pianoroll = np.zeros((88, f.shape[1]))
+    for i, frame in zip(index[0], index[1]):
+        pianoroll[f[i, frame], frame] = 1
+    return pianoroll
+
 
 if __name__ == '__main__':
-    #y, sr = load('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr.wav', normalization=True)
-    duration = 60
-    y, sr = load('/media/ycy/Shared/Datasets/MAPS/ENSTDkCl/MUS/MAPS_MUS-alb_se2_ENSTDkCl.wav', normalization=True)
-    y = y.mean(1)[:duration * sr]
+    y, sr = load('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr.wav', normalization=True)
+    y = y.mean(0)
+    H = read_bach10_F0s('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr-GTF0s.mat')
+
     windowsize = 4096
-    S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()
+    S = torch.stft(y, windowsize, hop_length=441, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()[:,
+        :H.shape[1]]
     S[S == 0] = 1e-8
+    H = torch.Tensor(H)
+    H[H==0] = 1e-8
     R = 88
     T = 5
-    max_iter = 200
+    max_iter = 500
 
+    print(S.shape, H.shape)
     S = S.cuda()
     net = NMFD(S.shape, T, n_components=R).cuda()
-    #net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
+    # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
-    niter, V = net.fit_transform(S, verbose=True, beta_loss=1.5, max_iter=max_iter, alpha=0.5, l1_ratio=0.2)
-    net.sort()
+    niter, V = net.fit_transform(S, H=H, verbose=True, beta_loss=1, update_H=True, max_iter=max_iter)
+    #net.sort()
     W = net.W
     H = net.H
 
@@ -40,7 +53,8 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.title('Activations')
     plt.subplot(3, 1, 3)
-    display.specshow(librosa.amplitude_to_db(V.detach().cpu().numpy(), ref=np.max), y_axis='log', x_axis='time', sr=sr, hop_length=1024)
+    display.specshow(librosa.amplitude_to_db(V.detach().cpu().numpy(), ref=np.max), y_axis='log', x_axis='time', sr=sr,
+                     hop_length=1024)
     plt.colorbar(format='%+2.0f dB')
     plt.title('Reconstructed spectrogram')
     plt.tight_layout()

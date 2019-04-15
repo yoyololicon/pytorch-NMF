@@ -14,7 +14,7 @@ torch.set_flush_denormal(True)
 if __name__ == '__main__':
     duration = 60
     y, sr = load('/media/ycy/Shared/Datasets/MAPS/ENSTDkCl/MUS/MAPS_MUS-alb_se2_ENSTDkCl.wav', normalization=True)
-    y = y.mean(1)[:duration * sr]
+    y = y.mean(0)[:duration * sr]
     windowsize = 4096
     S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()
     R = 88

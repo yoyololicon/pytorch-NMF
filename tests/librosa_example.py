@@ -16,7 +16,7 @@ if __name__ == '__main__':
     T = 5
 
     net = NMFD(S.shape, T, n_components=R).cuda()
-    _, V = net.fit_transform(S, verbose=True)
+    _, V = net.fit_transform(S, verbose=True, max_iter=1000, beta_loss=1, alpha=1e-2)
     net.sort()
     W, H = net.W.detach().cpu().numpy(), net.H.detach().cpu().numpy()
     V = V.detach().cpu().numpy()

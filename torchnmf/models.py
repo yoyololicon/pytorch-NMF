@@ -1,7 +1,8 @@
+import torch
+import torch.nn.functional as F
 from torch import nn
 from math import sqrt
 from .metrics import Beta_divergence
-from .utils import *
 from time import time
 
 
@@ -49,11 +50,15 @@ class NMF(nn.Module):
         avg = torch.sqrt(mean / self.n_components)
         param.data.normal_().mul_(avg).abs_()
 
-    def forward(self, H):
-        return self.W @ H
+    def forward(self, H=None, W=None):
+        if H is None:
+            H = self.H
+        if W is None:
+            W = self.W
+        return W @ H
 
     def _get_W_positive(self, WH, beta, H_sum=None):
-        H = self.H.data
+        H = self.H
         if beta == 1:
             if H_sum is None:
                 H_sum = H.sum(1)  # shape(n_components, )
@@ -67,7 +72,7 @@ class NMF(nn.Module):
         return denominator, H_sum
 
     def _get_H_positive(self, WH, beta, W_sum=None):
-        W = self.W.data
+        W = self.W
         if beta == 1:
             if W_sum is None:
                 W_sum = W.sum(0)  # shape(n_components, )
@@ -82,29 +87,21 @@ class NMF(nn.Module):
     def _mu_update(self, param, pos, gamma, l1_reg, l2_reg):
         if param.grad is None:
             return
-        multiplier = pos - param.grad.data
+        multiplier = pos - param.grad
         if l1_reg > 0:
             pos.add_(l1_reg)
         if l2_reg > 0:
             if pos.shape != param.data.shape:
-                pos = pos + l2_reg * param.data
+                pos = pos + l2_reg * param
             else:
-                pos.add_(l2_reg * param.data)
+                pos.add_(l2_reg * param)
         multiplier.div_(pos)
         if gamma != 1:
             multiplier.pow_(gamma)
-        param.data.mul_(multiplier)
+        param.mul_(multiplier)
 
     def _2sqrt_error(self, x):
         return sqrt(x * 2)
-
-    def _caculate_loss(self, X, beta, backprop=True):
-        self.zero_grad()
-        V = self.forward(self.H)
-        loss = Beta_divergence(V, X, beta)
-        if backprop:
-            loss.backward()
-        return V, loss
 
     def fit(self,
             X,
@@ -145,7 +142,8 @@ class NMF(nn.Module):
         l1_reg = alpha * l1_ratio
         l2_reg = alpha * (1 - l1_ratio)
 
-        V, loss = self._caculate_loss(X, beta, False)
+        V = self.forward()
+        loss = Beta_divergence(V, X, beta)
         error = self._2sqrt_error(loss.item())
         previous_error = error_at_init = error
 
@@ -153,25 +151,26 @@ class NMF(nn.Module):
         H_sum, W_sum = None, None
         for n_iter in range(1, max_iter + 1):
             if self.W.requires_grad:
-                H_status = self.H.requires_grad
-                self.H.requires_grad = False
+                self.zero_grad()
+                V = self.forward(H=self.H.detach())
+                loss = Beta_divergence(V, X, beta)
+                loss.backward()
 
-                V, loss = self._caculate_loss(X, beta)
-                positive_comps, H_sum = self._get_W_positive(V.data, beta, H_sum)
-                self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
+                with torch.no_grad():
+                    positive_comps, H_sum = self._get_W_positive(V, beta, H_sum)
+                    self._mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
                 W_sum = None
 
-                self.H.requires_grad = H_status
             if self.H.requires_grad:
-                W_status = self.W.requires_grad
-                self.W.requires_grad = False
+                self.zero_grad()
+                V = self.forward(W=self.W.detach())
+                loss = Beta_divergence(V, X, beta)
+                loss.backward()
 
-                V, loss = self._caculate_loss(X, beta)
-                positive_comps, W_sum = self._get_H_positive(V.data, beta, W_sum)
-                self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
+                with torch.no_grad():
+                    positive_comps, W_sum = self._get_H_positive(V, beta, W_sum)
+                    self._mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
                 H_sum = None
-
-                self.W.requires_grad = W_status
 
             if tol > 0 and n_iter % 10 == 0:
                 error = self._2sqrt_error(loss.item())
@@ -220,12 +219,16 @@ class NMFD(NMF):
         self.T = T
         self.W = torch.nn.Parameter(torch.rand(self.K, self.n_components, self.T))
 
-    def forward(self, H):
-        H = F.pad(H, (self.T - 1, 0))
-        return F.conv1d(H[None, :], self.W.flip(2))[0]
+    def forward(self, H=None, W=None):
+        if H is None:
+            H = self.H
+        if W is None:
+            W = self.W
+        H = F.pad(H, [self.T - 1, 0])
+        return F.conv1d(H[None, :], W.flip(2))[0]
 
     def _get_W_positive(self, WH, beta, H_sum=None):
-        H = self.H.data
+        H = self.H
         if beta == 1:
             if H_sum is None:
                 H_sum = H.sum(1)
@@ -233,14 +236,14 @@ class NMFD(NMF):
         else:
             if beta != 2:
                 WH = WH.pow(beta - 1)
-            H = F.pad(H, (self.T - 1, 0))
+            H = F.pad(H, [self.T - 1, 0])
             WHHt = F.conv1d(H[:, None], WH[:, None])
             denominator = WHHt.transpose(0, 1).flip(2)
 
         return denominator, H_sum
 
     def _get_H_positive(self, WH, beta, W_sum=None):
-        W = self.W.data
+        W = self.W
         if beta == 1:
             if W_sum is None:
                 W_sum = W.sum((0, 2))
@@ -248,7 +251,7 @@ class NMFD(NMF):
         else:
             if beta != 2:
                 WH = WH.pow(beta - 1)
-            WH = F.pad(WH, (0, self.T - 1))
+            WH = F.pad(WH, [0, self.T - 1])
             WtWH = F.conv1d(WH[None, :], W.transpose(0, 1))[0]
             denominator = WtWH
         return denominator, W_sum
