@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from librosa import display
 
-from torchnmf import NMF, NMFD
+from torchnmf import NMF, NMFD, PLCA
 
 if __name__ == '__main__':
     y, sr = librosa.load(librosa.util.example_audio_file())
@@ -12,20 +12,19 @@ if __name__ == '__main__':
     windowsize = 2048
     S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt().cuda()
     S[S == 0] = 1e-8
-    R = 8
+    R = 16
     T = 5
 
-    net = NMFD(S.shape, T, n_components=R).cuda()
-    _, V = net.fit_transform(S, verbose=True, max_iter=1000, beta_loss=2, alpha=1e-2)
+    net = PLCA(S.shape, rank=R).cuda()
+    _, V = net.fit_transform(S, verbose=True, max_iter=50)
     net.sort()
     W, H = net.W.detach().cpu().numpy(), net.H.detach().cpu().numpy()
     V = V.detach().cpu().numpy()
 
     plt.figure(figsize=(10, 8))
-
-    for i in range(R):
-        plt.subplot(3, R, i + 1)
-        display.specshow(librosa.amplitude_to_db(W[:, i], ref=np.max), y_axis='log')
+    for i in range(1):
+        plt.subplot(3, 1, i + 1)
+        display.specshow(librosa.amplitude_to_db(W[:, :], ref=np.max), y_axis='log')
         plt.title('Template ' + str(i + 1))
     plt.subplot(3, 1, 2)
     display.specshow(H, x_axis='time')

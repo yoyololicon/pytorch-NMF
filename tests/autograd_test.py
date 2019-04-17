@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from librosa import display
 from scipy.io import loadmat
-from torchnmf.models import NMF, NMFD
+from torchnmf.models import NMF, NMFD, PLCA
 from time import time
 
 torch.set_flush_denormal(True)
@@ -33,10 +33,10 @@ if __name__ == '__main__':
     H[H==0] = 1e-8
     R = 88
     T = 5
-    max_iter = 500
+    max_iter = 10
 
-    S = S.cuda()
-    net = NMF(S.shape, n_components=R).cuda()
+    S = S
+    net = PLCA(S.shape, rank=R)
     # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
     niter, V = net.fit_transform(S, H=H, verbose=True, beta_loss=1, max_iter=max_iter)
