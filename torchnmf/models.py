@@ -3,7 +3,6 @@ import torch.nn.functional as F
 from torch import nn
 from math import sqrt
 from .metrics import Beta_divergence
-from time import time
 from tqdm import tqdm
 
 import numpy as np
@@ -261,9 +260,9 @@ class NMFD(NMF):
         self.H.data = self.H.data[idx]
 
 
-class PLCA(torch.jit.ScriptModule):
+class PLCA(nn.Module):
 
-    def __init__(self, Xshape, rank=None):
+    def __init__(self, Xshape, n_components=None):
         """
 
         :param Xshape: Target matrix size.
@@ -271,14 +270,14 @@ class PLCA(torch.jit.ScriptModule):
         """
         super().__init__()
         self.K, self.M = Xshape
-        if not rank:
-            self.rank = self.K
+        if not n_components:
+            self.n_components = self.K
         else:
-            self.rank = rank
+            self.n_components = n_components
 
-        self.W = torch.nn.Parameter(torch.Tensor(self.K, self.rank), requires_grad=False)
-        self.H = torch.nn.Parameter(torch.Tensor(self.rank, self.M), requires_grad=False)
-        self.Z = torch.nn.Parameter(torch.Tensor(self.rank), requires_grad=False)
+        self.W = torch.nn.Parameter(torch.Tensor(self.K, self.n_components), requires_grad=False)
+        self.H = torch.nn.Parameter(torch.Tensor(self.n_components, self.M), requires_grad=False)
+        self.Z = torch.nn.Parameter(torch.Tensor(self.n_components), requires_grad=False)
 
         self.fix_neg = nn.Threshold(0., 1e-8, inplace=True)
 
@@ -291,30 +290,34 @@ class PLCA(torch.jit.ScriptModule):
             Z = self.Z
         return (W * Z) @ H
 
-    @torch.jit.script_method
-    def _e_step(self):
-        R = torch.unsqueeze(self.W * self.Z, 2) * self.H
-        V = R.sum(1, keepdim=True)
-        return V.squeeze(), R / V
+    def _initialize(self):
+        self.W.data.uniform_(0, 1)
+        self.W[:] = self._normalize(self.W, [0])
+        self.H.data.fill_(1 / self.M)
+        self.Z.data.fill_(1 / self.n_components)
 
-    @torch.jit.script_method
-    def _m_step(self, P, R, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, Tensor, bool, bool, bool, float, float, float) -> None
-        PR = P.unsqueeze(1) * R
-        Z = PR.sum((0, 2))
+    #@torch.jit.script_method
+    def _e_step(self):
+        return self.forward(self.H, self.W, self.Z)
+
+    #@torch.jit.script_method
+    def _m_step(self, PonWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
+        # type: (Tensor, bool, bool, bool, float, float, float) -> None
+        tmp = torch.unsqueeze(self.W * self.Z, 2) * self.H * PonWZH.unsqueeze(1)
+        Z = torch.sum(tmp, (0, 2))
         if update_W:
-            W = self.fix_neg(PR.sum(2) / Z + W_alpha - 1)
-            self.W[:] = self._normalize(W, 0)
+            W = self.fix_neg(tmp.sum(2) / Z + W_alpha - 1)
+            self.W[:] = self._normalize(W, [0])
         if update_H:
-            H = self.fix_neg(PR.sum(0) / Z.unsqueeze(1) + H_alpha - 1)
-            self.H[:] = self._normalize(H, 1)
+            H = self.fix_neg(tmp.sum(0) / Z.unsqueeze(1) + H_alpha - 1)
+            self.H[:] = self._normalize(H, [1])
         if update_Z:
             Z += Z_alpha - 1
-            self.Z[:] = self._normalize(self.fix_neg(Z), 0)
+            self.Z[:] = self._normalize(self.fix_neg(Z), [0])
 
-    @torch.jit.script_method
+    #@torch.jit.script_method
     def _normalize(self, x, axis):
-        # type: (Tensor, int) -> Tensor
+        # type: (Tensor, List[int]) -> Tensor
         return x / x.sum(axis, keepdim=True)
 
     def fit(self,
@@ -336,30 +339,27 @@ class PLCA(torch.jit.ScriptModule):
         norm = X.sum()
         X = X / norm
 
+        self._initialize()
+
         if W is not None:
             self.W.data.copy_(W)
-        else:
-            self.W.data.uniform_(0, 1)
-            self.W[:] = self._normalize(self.W, 0)
 
         if H is not None:
             self.H.data.copy_(H)
-        else:
-            self.H.data.fill_(1 / self.M)
 
         if Z is not None:
             self.Z.data.copy_(Z)
-        else:
-            self.Z.data.fill_(1 / self.rank)
 
         log_prob = -np.inf
         with tqdm(total=max_iter) as pbar:
             for n_iter in range(1, max_iter + 1):
-                V, R = self._e_step()
+                V = self._e_step()
 
                 # log prob
-                new_log_prob = torch.sum(X * V.log())
-                self._m_step(X, R, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha)
+                new_log_prob = torch.sum(
+                    X * V.log()) + (W_alpha - 1) * self.W.log().sum() + (H_alpha - 1) * self.H.log().sum() + (
+                                       Z_alpha - 1) * self.Z.log().sum()
+                self._m_step(X / V, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha)
                 if verbose:
                     pbar.set_description('Log likelihood=%.4f' % new_log_prob)
                     pbar.update()
@@ -372,6 +372,58 @@ class PLCA(torch.jit.ScriptModule):
 
     def sort(self):
         _, maxidx = self.W.data.max(0)
+        _, idx = maxidx.sort()
+        self.W.data = self.W.data[:, idx]
+        self.H.data = self.H.data[idx]
+        self.Z.data = self.Z.data[idx]
+
+
+class SIPLCA(PLCA):
+
+    def __init__(self, Xshape, T=1, n_components=None):
+        """
+
+        :param Xshape: Target matrix size.
+        :param n_components:
+        """
+        super().__init__(Xshape, n_components)
+        self.T = T
+        self.W = torch.nn.Parameter(torch.Tensor(self.K, self.n_components, self.T), requires_grad=False)
+
+    def forward(self, H=None, W=None, Z=None):
+        if H is None:
+            H = self.H
+        if W is None:
+            W = self.W
+        if Z is None:
+            Z = self.Z
+        H = F.pad(H, [self.T - 1, 0])
+        return F.conv1d(H[None, :], W.flip(2) * Z.unsqueeze(1))[0]
+
+    def _initialize(self):
+        super()._initialize()
+        self.W[:] = self._normalize(self.W, [0, 2])
+
+    def _m_step(self, PonWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
+        # type: (Tensor, bool, bool, bool, float, float, float) -> None
+        H = F.pad(self.H * self.Z.unsqueeze(1), [self.T - 1, 0])
+        new_W = F.conv1d(H.unsqueeze(1), PonWZH.unsqueeze(1)).transpose(0, 1).flip(2) * self.W
+        Z = new_W.sum((0, 2))
+        if update_W:
+            new_W /= Z.unsqueeze(1)
+            new_W = self.fix_neg(new_W + W_alpha - 1)
+            self.W[:] = self._normalize(new_W, [0, 2])
+        if update_H:
+            PonWZH = F.pad(PonWZH, [0, self.T - 1])
+            new_H = F.conv1d(PonWZH.unsqueeze(0), torch.transpose(self.W * self.Z.unsqueeze(1), 0, 1))[0] * self.H
+            new_H = self.fix_neg(self._normalize(new_H, [1]) + H_alpha - 1)
+            self.H[:] = self._normalize(new_H, [1])
+        if update_Z:
+            Z += Z_alpha - 1
+            self.Z[:] = self._normalize(self.fix_neg(Z), [0])
+
+    def sort(self):
+        _, maxidx = self.W.data.sum(2).max(0)
         _, idx = maxidx.sort()
         self.W.data = self.W.data[:, idx]
         self.H.data = self.H.data[idx]
