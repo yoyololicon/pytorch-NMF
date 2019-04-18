@@ -296,11 +296,11 @@ class PLCA(nn.Module):
         self.H.data.fill_(1 / self.M)
         self.Z.data.fill_(1 / self.n_components)
 
-    #@torch.jit.script_method
+    # @torch.jit.script_method
     def _e_step(self):
         return self.forward(self.H, self.W, self.Z)
 
-    #@torch.jit.script_method
+    # @torch.jit.script_method
     def _m_step(self, PonWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
         tmp = torch.unsqueeze(self.W * self.Z, 2) * self.H * PonWZH.unsqueeze(1)
@@ -315,7 +315,7 @@ class PLCA(nn.Module):
             Z += Z_alpha - 1
             self.Z[:] = self._normalize(self.fix_neg(Z), [0])
 
-    #@torch.jit.script_method
+    # @torch.jit.script_method
     def _normalize(self, x, axis):
         # type: (Tensor, List[int]) -> Tensor
         return x / x.sum(axis, keepdim=True)
@@ -331,7 +331,6 @@ class PLCA(nn.Module):
             tol=1e-5,
             max_iter=40,
             verbose=0,
-            initial='random',
             W_alpha=1,
             H_alpha=1,
             Z_alpha=1
@@ -418,6 +417,68 @@ class SIPLCA(PLCA):
             new_H = F.conv1d(PonWZH.unsqueeze(0), torch.transpose(self.W * self.Z.unsqueeze(1), 0, 1))[0] * self.H
             new_H = self.fix_neg(self._normalize(new_H, [1]) + H_alpha - 1)
             self.H[:] = self._normalize(new_H, [1])
+        if update_Z:
+            Z += Z_alpha - 1
+            self.Z[:] = self._normalize(self.fix_neg(Z), [0])
+
+    def sort(self):
+        _, maxidx = self.W.data.sum(2).max(0)
+        _, idx = maxidx.sort()
+        self.W.data = self.W.data[:, idx]
+        self.H.data = self.H.data[idx]
+        self.Z.data = self.Z.data[idx]
+
+
+class SIPLCA2(SIPLCA):
+
+    def __init__(self, Xshape, win=1, n_components=None):
+        """
+
+        :param Xshape: Target matrix size.
+        :param n_components:
+        """
+        try:
+            F, T = win
+        except:
+            F = T = win
+        super().__init__(Xshape, T, n_components)
+        self.F = F
+        self.pad_size = (F // 2, self.T // 2)
+        self.W = nn.Parameter(torch.Tensor(self.F, self.n_components, self.T), requires_grad=False)
+        self.H = nn.Parameter(torch.Tensor(self.n_components, *Xshape), requires_grad=False)
+
+    def forward(self, H=None, W=None, Z=None):
+        if H is None:
+            H = self.H
+        if W is None:
+            W = self.W
+        if Z is None:
+            Z = self.Z
+        return F.conv2d(H.unsqueeze(0), W.mul(Z.unsqueeze(1)).transpose(0, 1).flip((1, 2)).unsqueeze(0),
+                        padding=self.pad_size)[0, 0]
+
+    def _initialize(self):
+        super()._initialize()
+        self.H.data.fill_(1 / self.K / self.M)
+
+    def _m_step(self, PonWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
+        # type: (Tensor, bool, bool, bool, float, float, float) -> None
+        PonWZH = PonWZH.unsqueeze(0).unsqueeze(0)
+        new_W = F.conv2d(
+            self.H.mul(self.Z.unsqueeze(1).unsqueeze(2)).unsqueeze(1), PonWZH, padding=self.pad_size).squeeze(1).flip(
+            (1, 2)).transpose(0, 1) * self.W
+        Z = new_W.sum((0, 2))
+        if update_W:
+            new_W /= Z.unsqueeze(1)
+            new_W = self.fix_neg(new_W + W_alpha - 1)
+            self.W[:] = self._normalize(new_W, [0, 2])
+        if update_H:
+            new_H = \
+                F.conv2d(PonWZH, torch.transpose(self.W * self.Z.unsqueeze(1), 0, 1).unsqueeze(1),
+                         padding=self.pad_size)[
+                    0] * self.H
+            new_H = self.fix_neg(self._normalize(new_H, [1]) + H_alpha - 1)
+            self.H[:] = self._normalize(new_H, [1, 2])
         if update_Z:
             Z += Z_alpha - 1
             self.Z[:] = self._normalize(self.fix_neg(Z), [0])
