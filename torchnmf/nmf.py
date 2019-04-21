@@ -3,20 +3,25 @@ import torch.nn.functional as F
 from torch import nn
 from math import sqrt
 from .metrics import Beta_divergence
+from .base import Base
 from tqdm import tqdm
 
 import numpy as np
 
 
-def _beta_loss_to_float(beta_loss):
-    allowed_beta_loss = {'frobenius': 2,
-                         'kullback-leibler': 1,
-                         'itakura-saito': 0}
-    if isinstance(beta_loss, str) and beta_loss in allowed_beta_loss:
-        beta_loss = allowed_beta_loss[beta_loss]
+def _2sqrt_error(x):
+    return sqrt(x * 2)
 
-    return beta_loss
 
+class NMF_(Base):
+    def __init__(self):
+        super().__init__()
+
+    def get_W_positive(self, *args):
+        raise NotImplementedError
+
+    def get_H_positive(self, *args):
+        raise NotImplementedError
 
 
 class NMF(nn.Module):
@@ -236,6 +241,3 @@ class NMFD(NMF):
         _, idx = maxidx.sort()
         self.W.data = self.W.data[:, idx]
         self.H.data = self.H.data[idx]
-
-
-

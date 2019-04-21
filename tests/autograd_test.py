@@ -25,22 +25,23 @@ if __name__ == '__main__':
     H = read_bach10_F0s('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr-GTF0s.mat').astype(
         np.float32)
 
-    S = librosa.feature.melspectrogram(y, sr).astype(np.float32)
+    S = librosa.feature.melspectrogram(y, sr, norm=None).astype(np.float32)
     S[S == 0] = 1e-8
+    S = np.stack((S, S), 0)
     S = torch.tensor(S)
-    #H = torch.tensor(H)
-    #H[H == 0] = 1e-8
+    # H = torch.tensor(H)
+    # H[H == 0] = 1e-8
     R = 1
     win = (30, 5)
-    max_iter = 500
+    max_iter = 200
 
-    net = SIPLCA2(S.shape, rank=R, win=win,uniform=True).cuda()
+    net = SIPLCA2(S.shape, rank=R, win=win, uniform=True).cuda()
     # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
-    #W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
-    #W /= W.sum()
+    # W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
+    # W /= W.sum()
 
-    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, H_alpha=1.0002)
+    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, H_alpha=1.0001)
     #net.sort()
     W = net.W.detach().cpu().numpy().reshape(win[0], -1)
     H = net.H.detach().cpu().numpy()[0]

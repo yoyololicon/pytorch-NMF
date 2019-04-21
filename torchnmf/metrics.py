@@ -5,7 +5,7 @@ from torch.nn import functional as F
 
 eps = 1e-8
 
-@torch.jit.script
+
 def KL_divergence(predict, target):
     return (target * (target / predict).log()).sum() - target.sum() + predict.sum()
 
@@ -29,4 +29,4 @@ def Beta_divergence(predict, target, beta=2):
     else:
         bminus = beta - 1
         return (target.pow(beta).sum() + bminus * predict.pow(beta).sum() - beta * (
-                    target * predict.pow(bminus)).sum()) / (beta * bminus)
+                target * predict.pow(bminus)).sum()) / (beta * bminus)
