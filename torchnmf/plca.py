@@ -5,10 +5,11 @@ from .utils import normalize
 from tqdm import tqdm
 from .metrics import KL_divergence
 
-
+@torch.jit.script
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
-    return V.view(-1) @ WZH.log().view(-1) + W.mul(W_alpha - 1).log().sum() + H.mul(H_alpha - 1).log().sum() + \
-           Z.mul(Z_alpha - 1).log().sum()
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, float, float, float) -> Tensor
+    return V.view(-1) @ WZH.log().view(-1) + W.log().sum().mul(W_alpha - 1) + H.log().sum().mul(
+        H_alpha - 1) + Z.log().sum().mul(Z_alpha - 1)
 
 
 class PLCA(Base):
@@ -42,16 +43,14 @@ class PLCA(Base):
     def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
         tmp = torch.unsqueeze(self.W * self.Z, 2) * self.H * VdivWZH[:, None]
-        Z = torch.sum(tmp, (0, 2))
         if update_W:
-            W = self.fix_neg(tmp.sum(2) / Z + W_alpha - 1)
+            W = self.fix_neg(tmp.sum(2) + W_alpha - 1)
             self.W[:] = normalize(W, 0)
         if update_H:
-            H = self.fix_neg(tmp.sum(0) / Z[:, None] + H_alpha - 1)
+            H = self.fix_neg(tmp.sum(0) + H_alpha - 1)
             self.H[:] = normalize(H, 1)
         if update_Z:
-            Z += Z_alpha - 1
-            self.Z[:] = normalize(self.fix_neg(Z))
+            self.Z[:] = normalize(self.fix_neg(torch.sum(tmp, (0, 2)) + Z_alpha - 1))
 
     def fit(self,
             X,
@@ -84,8 +83,8 @@ class PLCA(Base):
             for n_iter in range(1, max_iter + 1):
                 V = self.forward()
 
-                log_prob = _log_probability(X, V, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha)
-                kl_div = KL_divergence(V, X) / self.kl_scale
+                log_prob = _log_probability(X, V, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
+                kl_div = KL_divergence(V, X).item() / self.kl_scale
 
                 self.update_params(X / V, update_W, update_H, update_Z, W_alpha, Z_alpha, H_alpha)
                 if verbose:
@@ -135,32 +134,26 @@ class SIPLCA(PLCA):
             W = self.W
         if Z is None:
             Z = self.Z
-        if len(H.shape) == 2:
-            H = H[None, ...]
         return F.conv1d(H[None, ...], W.flip(2) * Z[:, None], padding=self.T - 1)[0]
 
     def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
         if update_W or update_Z:
-            new_W = F.conv1d(self.H[:, None], VdivWZH[:, None], padding=self.T - 1).transpose(0, 1).flip(2) * self.W
+            new_W = F.conv1d(self.H[:, None] * self.Z[:, None, None], VdivWZH[:, None], padding=self.T - 1). \
+                        transpose(0, 1).flip(2) * self.W
             Z = new_W.sum((0, 2))
 
         if update_H:
             new_H = F.conv1d(VdivWZH[None, ...], torch.transpose(self.W * self.Z[:, None], 0, 1))[0] * self.H
-            new_H = normalize(new_H, 1)
-            if H_alpha != 1:
-                new_H = normalize(self.fix_neg(new_H + H_alpha - 1), 1)
+            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), 1)
             self.H[:] = new_H
 
         if update_W:
-            new_W /= Z[:, None]
-            if W_alpha != 1:
-                new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2))
+            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2))
             self.W[:] = new_W
 
         if update_Z:
-            if Z_alpha != 1:
-                Z = normalize(self.fix_neg(Z + Z_alpha - 1))
+            Z = normalize(self.fix_neg(Z + Z_alpha - 1))
             self.Z[:] = Z
 
     def sort(self):
@@ -220,25 +213,22 @@ class SIPLCA2(SIPLCA):
             VdivWZH = VdivWZH.view(self.channel, 1, self.K, self.M)
             new_W = F.conv2d(self.H.mul(self.Z[:, None, None])[:, None], VdivWZH, padding=self.pad_size).flip(
                 (2, 3)).transpose(0, 1) * self.W
-            Z = new_W.sum((0, 2, 3))
 
         if update_H:
             new_H = F.conv2d(VdivWZH.transpose(0, 1), torch.transpose(self.W * self.Z[:, None, None], 0, 1))[0] * self.H
-            new_H = normalize(new_H, (1, 2))
-            if H_alpha != 1:
-                new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2))
+            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2))
             self.H[:] = new_H
 
         if update_W:
-            new_W /= Z[:, None, None]
-            if W_alpha != 1:
-                new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3))
+            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3))
             self.W[:] = new_W
 
         if update_Z:
-            if Z_alpha != 1:
-                Z = normalize(self.fix_neg(Z + Z_alpha - 1))
+            Z = normalize(self.fix_neg(new_W.sum((0, 2, 3)) + Z_alpha - 1))
             self.Z[:] = Z
+
+    def sort(self):
+        raise NotImplementedError
 
 
 class SIPLCA3(PLCA):
@@ -293,25 +283,19 @@ class SIPLCA3(PLCA):
             VdivWZH = VdivWZH.view(self.channel, 1, self.N, self.K, self.M)
             new_W = F.conv3d(self.H.mul(self.Z[:, None, None, None])[:, None], VdivWZH, padding=self.pad_size).flip(
                 (2, 3, 4)).transpose(0, 1) * self.W
-            Z = new_W.sum((0, 2, 3, 4))
 
         if update_H:
             new_H = F.conv3d(VdivWZH.transpose(0, 1), torch.transpose(self.W * self.Z[:, None, None, None], 0, 1))[
                         0] * self.H
-            new_H = normalize(new_H, (1, 2, 3))
-            if H_alpha != 1:
-                new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2, 3))
+            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2, 3))
             self.H[:] = new_H
 
         if update_W:
-            new_W /= Z[:, None, None, None]
-            if W_alpha != 1:
-                new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3, 4))
+            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3, 4))
             self.W[:] = new_W
 
         if update_Z:
-            if Z_alpha != 1:
-                Z = normalize(self.fix_neg(Z + Z_alpha - 1))
+            Z = normalize(self.fix_neg(new_W.sum((0, 2, 3, 4)) + Z_alpha - 1))
             self.Z[:] = Z
 
     def sort(self):

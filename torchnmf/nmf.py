@@ -19,7 +19,7 @@ def _beta_loss_to_float(beta_loss):
 
 
 
-class NMF(Base):
+class NMF(nn.Module):
 
     def __init__(self, Xshape, rank=None):
         super().__init__()
