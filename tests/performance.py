@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from torchnmf.models import NMF as torchNMF
+from torchnmf.nmf import NMF as torchNMF
 
 from sklearn.decomposition import NMF
 from time import time

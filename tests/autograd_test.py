@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from librosa import display
 from scipy.io import loadmat
-from torchnmf.models import NMF, NMFD, PLCA
+from torchnmf.nmf import NMF, NMFD, PLCA
 from time import time
 
 torch.set_flush_denormal(True)
