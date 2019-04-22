@@ -5,7 +5,7 @@ class Base(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.fix_neg = nn.Threshold(0., 1e-12, inplace=True)
+        self.fix_neg = nn.Threshold(0., 1e-8, inplace=True)
 
     def fit(self, *args, **kwargs):
         raise NotImplementedError

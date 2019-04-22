@@ -63,8 +63,6 @@ class _NMF(Base):
             l1_ratio=0
             ):
 
-        # V = self.fix_neg(V)
-
         if W is None:
             pass  # will do special initialization in thre future
         else:
@@ -87,14 +85,11 @@ class _NMF(Base):
         l1_reg = alpha * l1_ratio
         l2_reg = alpha * (1 - l1_ratio)
 
-        WH = self.forward()
         loss_scale = torch.prod(torch.tensor(V.shape)).float()
-        loss = Beta_divergence(WH, V, beta) / loss_scale
-        previous_loss = loss_init = loss.item()
 
         H_sum, W_sum = None, None
         with tqdm(total=max_iter, disable=not verbose) as pbar:
-            for n_iter in range(1, max_iter + 1):
+            for n_iter in range(max_iter):
                 if self.W.requires_grad:
                     self.zero_grad()
                     WH = self.reconstruct(self.H.detach(), self.W)
@@ -123,7 +118,9 @@ class _NMF(Base):
                 # pbar.set_description('Beta loss=%.4f' % error)
                 pbar.update()
 
-                if (previous_loss - loss) / loss_init < tol:
+                if not n_iter:
+                    loss_init = loss
+                elif (previous_loss - loss) / loss_init < tol:
                     break
                 previous_loss = loss
 

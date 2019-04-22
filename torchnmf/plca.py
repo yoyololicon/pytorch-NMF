@@ -45,12 +45,12 @@ class _PLCA(Base):
             update_W=True,
             update_Z=True,
             update_H=True,
-            tol=1e-5,
+            tol=1e-6,
             max_iter=40,
             verbose=1,
             W_alpha=1,
             Z_alpha=1,
-            H_alpha=1
+            H_alpha=1,
             ):
 
         norm = V.sum()
@@ -66,23 +66,29 @@ class _PLCA(Base):
             self.Z.data.copy_(Z)
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
-            for n_iter in range(1, max_iter + 1):
+            for n_iter in range(max_iter):
                 WZH = self.reconstruct(self.W, self.Z, self.H)
 
                 log_prob = _log_probability(V, WZH, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
-                kl_div = KL_divergence(WZH, V).item()
+                loss = KL_divergence(WZH, V).item()
 
                 self.update_params(V / WZH, update_W, update_H, update_Z, W_alpha, Z_alpha, H_alpha)
 
-                pbar.set_postfix(Log_likelihood=log_prob, KL_divergence=kl_div)
+                pbar.set_postfix(Log_likelihood=log_prob, KL_divergence=loss)
                 # pbar.set_description('Log likelihood=%.4f' % log_prob)
                 pbar.update()
+
+                if not n_iter:
+                    loss_init = loss
+                elif (previous_loss - loss) / loss_init < tol:
+                    break
+                previous_loss = loss
 
         return n_iter, norm
 
     def fit_transform(self, *args, **kwargs):
         n_iter, norm = self.fit(*args, **kwargs)
-        return n_iter, self.forward() * norm
+        return n_iter, self.forward() * norm, norm
 
     def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
@@ -102,15 +108,18 @@ class PLCA(_PLCA):
 
     def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
-        tmp = torch.unsqueeze(self.W * self.Z, 2) * self.H * VdivWZH[:, None]
-        if update_W:
-            W = self.fix_neg(tmp.sum(2) + W_alpha - 1)
-            self.W[:] = normalize(W, 0)
+        if update_W or update_Z:
+            new_W = VdivWZH @ self.H.t() * self.W * self.Z
+
         if update_H:
-            H = self.fix_neg(tmp.sum(0) + H_alpha - 1)
+            H = self.fix_neg(self.W.mul(self.Z).t() @ VdivWZH * self.H + H_alpha - 1)
             self.H[:] = normalize(H, 1)
+
+        if update_W:
+            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), 0)
+
         if update_Z:
-            self.Z[:] = normalize(self.fix_neg(torch.sum(tmp, (0, 2)) + Z_alpha - 1))
+            self.Z[:] = normalize(self.fix_neg(new_W.sum(0) + Z_alpha - 1))
 
     def sort(self):
         _, maxidx = self.W.data.max(0)

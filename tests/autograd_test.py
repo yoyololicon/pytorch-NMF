@@ -32,18 +32,18 @@ if __name__ == '__main__':
     win = (200, 10)
     max_iter = 500
 
-    net = NMF(S.shape, rank=R).cuda()
+    net = SIPLCA(S.shape, rank=R, T=40).cuda()
     # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
     # W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
     # W /= W.sum()
 
-    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, tol=0)
+    niter, V, _ = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, W_alpha=1.0000001)
     net.sort()
     W = net.W.detach().cpu().numpy().reshape(S.shape[0], -1)
     H = net.H.detach().cpu().numpy()
 
-    #print(net.Z.detach().cpu().numpy())
+    print(net.Z.detach().cpu().numpy())
 
     plt.subplot(3, 1, 1)
     #plt.plot(W[:, 0])
