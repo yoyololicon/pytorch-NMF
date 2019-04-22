@@ -41,14 +41,14 @@ if __name__ == '__main__':
 
         net.cpu()
         start = time()
-        niter = net.fit(S, max_iter=max_iter, beta_loss=b, verbose=True)
+        niter = net.fit(S, max_iter=max_iter, beta=b, verbose=True)
         rate = (time() - start) /niter
         print('torch', rate)
         tch.append(rate)
 
         net.cuda()
         start = time()
-        niter = net.fit(Scuda, max_iter=max_iter, beta_loss=b, verbose=True)
+        niter = net.fit(Scuda, max_iter=max_iter, beta=b, verbose=True)
         rate = (time() - start) /niter
         print('torch + cuda', rate)
         tchcuda.append(rate)

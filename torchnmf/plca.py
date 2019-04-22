@@ -13,7 +13,7 @@ def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
         H_alpha - 1) + Z.log().sum().mul(Z_alpha - 1)
 
 
-class PLCA_(Base):
+class _PLCA(Base):
     def __init__(self, W_size, Z_size, H_size, W_norm_dim, H_norm_dim, uniform):
         super().__init__()
         self.rank = Z_size
@@ -89,7 +89,7 @@ class PLCA_(Base):
         raise NotImplementedError
 
 
-class PLCA(PLCA_):
+class PLCA(_PLCA):
 
     def __init__(self, Vshape: tuple, rank: int = None, uniform=False):
         self.K, self.M = Vshape
@@ -120,7 +120,7 @@ class PLCA(PLCA_):
         self.Z.data = self.Z.data[idx]
 
 
-class SIPLCA(PLCA_):
+class SIPLCA(_PLCA):
 
     def __init__(self, Vshape: tuple, rank: int = None, T: int = 1, uniform=False):
         self.K, self.M = Vshape
@@ -148,8 +148,7 @@ class SIPLCA(PLCA_):
             self.H[:] = new_H
 
         if update_W:
-            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2))
-            self.W[:] = new_W
+            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2))
 
         if update_Z:
             Z = normalize(self.fix_neg(new_W.sum((0, 2)) + Z_alpha - 1))
@@ -163,7 +162,7 @@ class SIPLCA(PLCA_):
         self.Z.data = self.Z.data[idx]
 
 
-class SIPLCA2(PLCA_):
+class SIPLCA2(_PLCA):
 
     def __init__(self, Vshape: tuple, rank: int = None, win=1, uniform=False):
         try:
@@ -204,8 +203,7 @@ class SIPLCA2(PLCA_):
             self.H[:] = new_H
 
         if update_W:
-            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3))
-            self.W[:] = new_W
+            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3))
 
         if update_Z:
             Z = normalize(self.fix_neg(new_W.sum((0, 2, 3)) + Z_alpha - 1))
@@ -215,7 +213,7 @@ class SIPLCA2(PLCA_):
         raise NotImplementedError
 
 
-class SIPLCA3(PLCA_):
+class SIPLCA3(_PLCA):
     def __init__(self, Vshape: tuple, rank: int = None, win=1, uniform=False):
         try:
             T, H, W = win
@@ -256,8 +254,7 @@ class SIPLCA3(PLCA_):
             self.H[:] = new_H
 
         if update_W:
-            new_W = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3, 4))
-            self.W[:] = new_W
+            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3, 4))
 
         if update_Z:
             Z = normalize(self.fix_neg(new_W.sum((0, 2, 3, 4)) + Z_alpha - 1))

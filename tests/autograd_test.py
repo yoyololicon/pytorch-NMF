@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from librosa import display
 from scipy.io import loadmat
 from torchnmf.plca import PLCA, SIPLCA, SIPLCA2, SIPLCA3
+from torchnmf.nmf import NMF, NMFD, NMF2D, NMF3D
 from time import time
 
 torch.set_flush_denormal(True)
@@ -21,41 +22,39 @@ def read_bach10_F0s(F0):
 
 
 if __name__ == '__main__':
-    y, sr = librosa.load('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr.wav', sr=None)
-    H = read_bach10_F0s('/media/ycy/Shared/Datasets/bach10/01-AchGottundHerr/01-AchGottundHerr-GTF0s.mat').astype(
-        np.float32)
+    y, sr = librosa.load('Amen-break.wav', sr=None)
 
-    S = librosa.feature.melspectrogram(y, sr, norm=None).astype(np.float32)
-    S[S == 0] = 1e-8
-    S = np.stack((S, S), 0)
+    S = np.abs(librosa.stft(y, n_fft=4096, hop_length=512))
+    #S = librosa.feature.melspectrogram(y, sr, n_fft=4096, n_mels=256, power=1).astype(np.float32)
+    #S = np.stack((S, S), 0)
     S = torch.tensor(S)
-    # H = torch.tensor(H)
-    # H[H == 0] = 1e-8
-    R = 1
-    win = (30, 5)
-    max_iter = 200
+    R = 4
+    win = (200, 10)
+    max_iter = 500
 
-    net = SIPLCA2(S.shape, rank=R, win=win, uniform=True).cuda()
+    net = NMF(S.shape, rank=R).cuda()
     # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
     # W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
     # W /= W.sum()
 
-    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, H_alpha=1.0001)
-    #net.sort()
-    W = net.W.detach().cpu().numpy().reshape(win[0], -1)
-    H = net.H.detach().cpu().numpy()[0]
+    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, tol=0)
+    net.sort()
+    W = net.W.detach().cpu().numpy().reshape(S.shape[0], -1)
+    H = net.H.detach().cpu().numpy()
+
+    #print(net.Z.detach().cpu().numpy())
 
     plt.subplot(3, 1, 1)
-    display.specshow(librosa.amplitude_to_db(W, ref=np.max), y_axis='mel', sr=sr)
+    #plt.plot(W[:, 0])
+    display.specshow(librosa.amplitude_to_db(W, ref=np.max), y_axis='log', sr=sr)
     plt.title('Template ')
     plt.subplot(3, 1, 2)
-    display.specshow(H, x_axis='time', hop_length=512, sr=sr)
+    display.specshow(H, x_axis='time', sr=sr)
     plt.colorbar()
     plt.title('Activations')
     plt.subplot(3, 1, 3)
-    display.specshow(librosa.amplitude_to_db(V.detach().cpu().numpy(), ref=np.max), y_axis='mel', x_axis='time', sr=sr,
-                     hop_length=512)
+    display.specshow(librosa.amplitude_to_db(V.detach().cpu().numpy(), ref=np.max), y_axis='log', x_axis='time', sr=sr)
     plt.colorbar(format='%+2.0f dB')
     plt.title('Reconstructed spectrogram')
     plt.tight_layout()
