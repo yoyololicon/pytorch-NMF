@@ -25,28 +25,28 @@ if __name__ == '__main__':
     y, sr = librosa.load('Amen-break.wav', sr=None)
 
     S = np.abs(librosa.stft(y, n_fft=4096, hop_length=512))
-    #S = librosa.feature.melspectrogram(y, sr, n_fft=4096, n_mels=256, power=1).astype(np.float32)
-    #S = np.stack((S, S), 0)
+    # S = librosa.feature.melspectrogram(y, sr, n_fft=4096, n_mels=256, power=1).astype(np.float32)
+    # S = np.stack((S, S), 0)
     S = torch.tensor(S)
     R = 4
     win = (200, 10)
     max_iter = 500
 
-    net = SIPLCA(S.shape, rank=R, T=40).cuda()
+    net = NMFD(S.shape, rank=R, T=10).cuda()
     # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
 
     # W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
     # W /= W.sum()
 
-    niter, V, _ = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, W_alpha=1.0000001)
+    niter, V = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, beta=0.8)
     net.sort()
     W = net.W.detach().cpu().numpy().reshape(S.shape[0], -1)
     H = net.H.detach().cpu().numpy()
 
-    print(net.Z.detach().cpu().numpy())
+    #    print(net.Z.detach().cpu().numpy())
 
     plt.subplot(3, 1, 1)
-    #plt.plot(W[:, 0])
+    # plt.plot(W[:, 0])
     display.specshow(librosa.amplitude_to_db(W, ref=np.max), y_axis='log', sr=sr)
     plt.title('Template ')
     plt.subplot(3, 1, 2)

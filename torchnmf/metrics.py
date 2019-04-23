@@ -3,8 +3,6 @@ from operator import mul
 from functools import reduce
 from torch.nn import functional as F
 
-_fix_neg = torch.nn.Threshold(0, 1e-8)
-
 
 def KL_divergence(predict, target):
     return (target * (target / predict).log()).sum() - target.sum() + predict.sum()
@@ -28,6 +26,5 @@ def Beta_divergence(predict, target, beta=2):
         return IS_divergence(predict, target)
     else:
         bminus = beta - 1
-        save_predict = _fix_neg(predict)
-        return (target.pow(beta).sum() + bminus * save_predict.pow(beta).sum() - beta * (
-                    target * save_predict.pow(bminus)).sum()) / (beta * bminus)
+        return (target.pow(beta).sum() + bminus * predict.pow(beta).sum() - beta * (
+                target * predict.pow(bminus)).sum()) / (beta * bminus)

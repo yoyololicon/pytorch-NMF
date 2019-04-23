@@ -63,6 +63,8 @@ class _NMF(Base):
             l1_ratio=0
             ):
 
+        V = self.fix_neg(V)
+
         if W is None:
             pass  # will do special initialization in thre future
         else:
@@ -93,7 +95,7 @@ class _NMF(Base):
                 if self.W.requires_grad:
                     self.zero_grad()
                     WH = self.reconstruct(self.H.detach(), self.W)
-                    loss = Beta_divergence(WH, V, beta)
+                    loss = Beta_divergence(self.fix_neg(WH), V, beta)
                     loss.backward()
 
                     with torch.no_grad():
@@ -104,7 +106,7 @@ class _NMF(Base):
                 if self.H.requires_grad:
                     self.zero_grad()
                     WH = self.reconstruct(self.H, self.W.detach())
-                    loss = Beta_divergence(WH, V, beta)
+                    loss = Beta_divergence(self.fix_neg(WH), V, beta)
                     loss.backward()
 
                     with torch.no_grad():
