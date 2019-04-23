@@ -270,7 +270,7 @@ class NMF2D(_NMF):
             if beta != 2:
                 WH = WH.pow(beta - 1)
             WH = WH.view(1, self.channel, self.K, self.M)
-            WtWH = F.conv1d(WH, W.transpose(0, 1))[0]
+            WtWH = F.conv2d(WH, W.transpose(0, 1))[0]
             denominator = WtWH
         return denominator, W_sum
 
@@ -311,7 +311,7 @@ class NMF3D(_NMF):
             if beta != 2:
                 WH = WH.pow(beta - 1)
             WH = WH.view(self.channel, 1, self.N, self.K, self.M)
-            WHHt = F.conv2d(WH, H[:, None])
+            WHHt = F.conv3d(WH, H[:, None])
             denominator = WHHt
 
         return denominator, H_sum
@@ -326,7 +326,7 @@ class NMF3D(_NMF):
             if beta != 2:
                 WH = WH.pow(beta - 1)
             WH = WH.view(1, self.channel, self.N, self.K, self.M)
-            WtWH = F.conv1d(WH, W.transpose(0, 1))[0]
+            WtWH = F.conv3d(WH, W.transpose(0, 1))[0]
             denominator = WtWH
         return denominator, W_sum
 
