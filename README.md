@@ -67,7 +67,7 @@ The barchart shows the time cost per iteration with different
 beta-divergence. It is clear that pytorch-based NMF is faster than
 scipy-based NMF (sklearn) when beta != 2 (Euclidean distance), and run
 even faster when computation is done on GPU. The test is conducted on a
-Acer E5 laptop with i5-7200U CPU and GTX 950M GPU with PyTorch 0.4.1 (I
+Acer E5 laptop with i5-7200U CPU and GTX 950M GPU, PyTorch 0.4.1 (I
 found the cpu inference speed is much slower with version >= 1.0).
 
 
