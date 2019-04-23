@@ -14,7 +14,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/yoyololicon/pytorch-NMFs",
     packages=setuptools.find_packages(),
-    install_requires=['torch==0.4.1'],
+    install_requires=['torch>=0.4.1', 'tqdm'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
