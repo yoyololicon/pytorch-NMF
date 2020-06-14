@@ -3,22 +3,30 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from .metrics import Beta_divergence
 from .base import Base
+from .utils import renorm_
 from tqdm import tqdm
+from collections.abc import Iterable
 
 
-def _mu_update(param, pos, gamma, l1_reg, l2_reg):
+def _mu_update(param: torch.Tensor, pos: torch.Tensor, gamma: float,
+               l1_reg: torch.Tensor, l2_reg: torch.Tensor,
+               reg_index: torch.LongTensor, reg_dim: int):
     if param.grad is None:
         return
     # prevent negative term, very likely to happen with kl divergence
     multiplier = F.relu(pos - param.grad, inplace=True)
 
-    if l1_reg > 0:
-        pos.add_(l1_reg)
-    if l2_reg > 0:
-        if pos.shape != param.shape:
-            pos = pos + l2_reg * param
-        else:
-            pos.add_(l2_reg * param)
+    if reg_index is not None:
+        if l1_reg > 0:
+            # pos.add_(l1_reg)
+            pos.index_add_(reg_dim, reg_index, torch.index_select(l1_reg.expand_as(pos), reg_dim, reg_index))
+        if l2_reg > 0:
+            if pos.shape != param.shape:
+                pos = pos.expand_as(param).index_add(reg_dim, reg_index,
+                                                     l2_reg * param.index_select(reg_dim, reg_index))
+                # pos = pos + l2_reg * param
+            else:
+                pos.index_add_(reg_dim, reg_index, l2_reg * param.index_select(reg_dim, reg_index))
     multiplier.div_(pos)
     if gamma != 1:
         multiplier.pow_(gamma)
@@ -60,7 +68,9 @@ class _NMF(Base):
             verbose=0,
             initial='random',
             alpha=0,
-            l1_ratio=0
+            l1_ratio=0,
+            W_reg_control=None,
+            H_reg_control=None,
             ):
 
         V = self.fix_neg(V)
@@ -84,8 +94,26 @@ class _NMF(Base):
         else:
             gamma = 1
 
-        l1_reg = alpha * l1_ratio
+        l1_reg = torch.Tensor([alpha * l1_ratio]).to(V.device)
         l2_reg = alpha * (1 - l1_ratio)
+
+        # construct sparsity control mask
+        W_reg_index = H_reg_index = torch.arange(self.rank, device=self.W.device, dtype=torch.long)
+        if type(W_reg_control) is float or type(W_reg_control) is int:
+            assert 0 <= W_reg_control <= 1, "regularization ratio should be between zero and one"
+            W_reg_index = torch.arange(round(self.rank * W_reg_control), device=self.W.device, dtype=torch.long)
+        elif isinstance(W_reg_control, Iterable):
+            W_reg_index = torch.LongTensor(W_reg_control).to(self.W.device)
+        elif W_reg_control is not None:
+            raise ValueError("W_reg_index should be an index array or ratio between zero and one!")
+
+        if type(H_reg_control) is float or type(H_reg_control) is int:
+            assert 0 <= H_reg_control <= 1, "regularization ratio should be between zero and one"
+            H_reg_index = torch.arange(round(self.rank * H_reg_control), device=self.H.device)
+        elif isinstance(H_reg_control, Iterable):
+            H_reg_index = torch.LongTensor(H_reg_control).to(self.H.device)
+        elif H_reg_control is not None:
+            raise ValueError("H_reg_index should be an index array or ratio between zero and one!")
 
         loss_scale = torch.prod(torch.tensor(V.shape)).float()
 
@@ -100,7 +128,7 @@ class _NMF(Base):
 
                     with torch.no_grad():
                         positive_comps, H_sum = self.get_W_positive(WH, beta, H_sum)
-                        _mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg)
+                        _mu_update(self.W, positive_comps, gamma, l1_reg, l2_reg, W_reg_index, 1)
                     W_sum = None
 
                 if self.H.requires_grad:
@@ -111,8 +139,10 @@ class _NMF(Base):
 
                     with torch.no_grad():
                         positive_comps, W_sum = self.get_H_positive(WH, beta, W_sum)
-                        _mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg)
+                        _mu_update(self.H, positive_comps, gamma, l1_reg, l2_reg, H_reg_index, 0)
+
                     H_sum = None
+
 
                 loss = loss.div_(loss_scale).item()
 
@@ -132,6 +162,28 @@ class _NMF(Base):
         n_iter = self.fit(*args, **kwargs)
         return n_iter, self.forward()
 
+    @torch.no_grad()
+    def renorm(self, unit_norm='W'):
+        W2 = self.W * self.W
+        H2 = self.H * self.H
+        sum_dims = list(range(W2.dim()))
+        sum_dims.remove(1)
+        W_norm = W2.sum(sum_dims, keepdim=True)
+        sum_dims = list(range(1, H2.dim()))
+        H_norm = H2.sum(sum_dims, keepdim=True)
+        scaler = W_norm.squeeze() / H_norm.squeeze()
+
+        if unit_norm == 'W':
+            self.W /= W_norm
+            scaler = W_norm.squeeze() / H_norm.squeeze()
+            slicer = (slice(None),) + (None,) * (self.H.dim() - 1)
+            self.H *= scaler[slicer]
+        elif unit_norm == 'H':
+            self.H /= H_norm
+            slicer = (slice(None),) + (None,) * (self.W.dim() - 2)
+            self.W /= scaler[slicer]
+        else:
+            raise ValueError("Input type isn't valid!")
 
 class NMF(_NMF):
 
