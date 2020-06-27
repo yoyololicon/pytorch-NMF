@@ -21,28 +21,35 @@ def read_bach10_F0s(F0):
 
 
 if __name__ == '__main__':
+
+    V = torch.rand(100, 1, 64, 64)
+    model = NMF2D(V.shape, (32, 32), 8).cuda()
+    print(model.H.shape)
+    model.fit(V.cuda(), verbose=1)
+
+    exit()
     y, sr = librosa.load('Amen-break.wav', sr=None)
 
-    S = np.abs(librosa.stft(y, n_fft=4096, hop_length=512))
+    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
     # S = librosa.feature.melspectrogram(y, sr, n_fft=4096, n_mels=256, power=1).astype(np.float32)
     # S = np.stack((S, S), 0)
     S = torch.tensor(S)
-    R = 4
+    R = 3
     win = (200, 10)
     max_iter = 500
 
-    net = PLCA(S.shape, rank=R).cuda()
-    # net = NMF(S.shape, n_components=R, max_iter=max_iter, verbose=True, beta_loss=2).cuda()
+    #net = SIPLCA(S.shape, rank=R, T=20).cuda()
+    net = NMFD(S.shape, rank=4, T=20).cuda()
 
     # W = torch.exp(-torch.arange(64.)).view(1, 1, 64, 1)
     # W /= W.sum()
 
-    niter, V, _ = net.fit_transform(S.cuda(), verbose=True, max_iter=max_iter, tol=1e-7)
+    niter, V, *_ = net.fit_transform(S.cuda(), sparse=True, verbose=True, max_iter=max_iter, beta=1, sW=0.3)
     net.sort()
     W = net.W.detach().cpu().numpy().reshape(S.shape[0], -1)
     H = net.H.detach().cpu().numpy()
 
-    print(net.Z.detach().cpu().numpy())
+    #print(net.Z.detach().cpu().numpy())
 
     plt.subplot(3, 1, 1)
     # plt.plot(W[:, 0])

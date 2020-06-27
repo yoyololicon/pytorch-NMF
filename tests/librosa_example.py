@@ -19,10 +19,9 @@ if __name__ == '__main__':
     F = S.shape[0] - 1
 
     net = NMFD(S.shape, T=T, rank=R).cuda()
-    _, V, *_ = net.fit_transform(S.cuda(), beta=1, tol=1e-5, verbose=True, max_iter=500, alpha=0.01, l1_ratio=0.1,
-                                 H_reg_control=1, W_reg_control=0)
-    net.sort()
-    net.renorm('W')
+    _, V, *_ = net.fit_transform(S.cuda(), sparse=True, beta=2, verbose=True, max_iter=100, sH=0.8, sW=None)
+    #net.sort()
+    #net.renorm('W')
     W, H = net.W.detach().cpu().numpy(), net.H.detach().cpu().numpy()
     V = V.detach().cpu().numpy()
     #V = net(net.H[1:2], net.W[:, 1:2, :]).detach().cpu().numpy()

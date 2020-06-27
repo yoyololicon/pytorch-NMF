@@ -5,7 +5,7 @@ from torch.nn import functional as F
 
 
 def KL_divergence(predict, target):
-    return (target * (target / predict).log()).sum() - target.sum() + predict.sum()
+    return F.kl_div(predict.log(), target, reduction='sum') - target.sum() + predict.sum()
 
 
 def Euclidean(predict, target):
@@ -28,3 +28,14 @@ def Beta_divergence(predict, target, beta=2):
         bminus = beta - 1
         return (target.pow(beta).sum() + bminus * predict.pow(beta).sum() - beta * (
                 target * predict.pow(bminus)).sum()) / (beta * bminus)
+
+
+def sparseness(x):
+    N = x.numel()
+    return (N ** 0.5 - x.norm(1) / x.norm(2)) / (N ** 0.5 - 1)
+
+
+if __name__ == '__main__':
+    x = torch.rand(5, 5)
+    y = torch.rand_like(x)
+    print((y * (y / x).log()).sum(), F.kl_div(x.log(), y, reduction='sum'))
