@@ -459,7 +459,7 @@ class NMFD(_NMF):
                 WHHt = F.conv1d(WH, H, groups=self.batch * self.K)
                 WHHt = WHHt.view(self.batch, self.K, self.rank, WHHt.shape[-1]).sum(0)
             else:
-                WHHt = F.conv1d(WH[:, None], H[:, None])
+                WHHt = F.conv1d(WH[:, None], H.transpose(0, 1))
             denominator = WHHt
 
         return denominator, H_sum
