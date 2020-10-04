@@ -3,24 +3,25 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from torchnmf.nmf import NMF as torchNMF
+from torchnmf.deep import NMF as torchNMF
 
 from sklearn.decomposition import NMF
 from time import time
 
 torch.set_flush_denormal(True)
-#torch.set_default_tensor_type(torch.DoubleTensor)
+# torch.set_default_tensor_type(torch.DoubleTensor)
 
 if __name__ == '__main__':
     duration = 60
     y, sr = load('/media/ycy/Shared/Datasets/MAPS/ENSTDkCl/MUS/MAPS_MUS-alb_se2_ENSTDkCl.wav', normalization=True)
     y = y.mean(0)[:duration * sr]
-    windowsize = 4096
+    windowsize = 2048
     S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt()
     R = 88
-    max_iter = 50
+    max_iter = 100
+    tol = 1e-4
 
-    betas = [0, 1, 2]
+    betas = [0, 0.5, 1, 1.5, 2]
     sk = []
     tch = []
     tchcuda = []
@@ -28,11 +29,11 @@ if __name__ == '__main__':
     Snumpy = S.numpy()
     Scuda = S.cuda()
 
-    net = torchNMF(S.shape, R)
+    net = torchNMF(S.shape, rank=R)
 
     for b in betas:
         print('beta =', b)
-        model = NMF(R, 'random', solver='mu', max_iter=max_iter, beta_loss=b, verbose=True)
+        model = NMF(R, solver='mu', max_iter=max_iter, beta_loss=b, tol=tol, verbose=True)
         start = time()
         model.fit(Snumpy)
         rate = (time() - start) / model.n_iter_
@@ -41,15 +42,15 @@ if __name__ == '__main__':
 
         net.cpu()
         start = time()
-        niter = net.fit(S, max_iter=max_iter, beta=b, verbose=True)
-        rate = (time() - start) /niter
+        niter = net.fit(S, max_iter=max_iter, beta=b, tol=tol, verbose=True)
+        rate = (time() - start) / niter
         print('torch', rate)
         tch.append(rate)
 
         net.cuda()
         start = time()
-        niter = net.fit(Scuda, max_iter=max_iter, beta=b, verbose=True)
-        rate = (time() - start) /niter
+        niter = net.fit(Scuda, max_iter=max_iter, beta=b, tol=tol, verbose=True)
+        rate = (time() - start) / niter
         print('torch + cuda', rate)
         tchcuda.append(rate)
 

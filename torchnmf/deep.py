@@ -4,6 +4,38 @@ import torch.nn.functional as F
 from typing import Union, Iterable
 from collections.abc import Iterable as Iterabc
 from .base import Base
+from .metrics import Beta_divergence
+from tqdm import tqdm
+
+
+def _double_backward_update(V, WH, param, beta, gamma, l1_reg, l2_reg, pos=None):
+    param.grad = None
+    if beta == 2:
+        output_neg = V
+        output_pos = WH
+    elif beta == 1:
+        output_neg = V / WH
+        output_pos = None
+    else:
+        output_neg = WH.pow(beta - 2) * V
+        output_pos = WH.pow(beta - 1)
+    # first backward
+    WH.backward(output_neg, retain_graph=pos is None)
+    neg = torch.clone(param.grad).detach()
+
+    if pos is None:
+        param.grad.zero_()
+        WH.backward(output_pos)
+        pos = torch.clone(param.grad).detach()
+
+    if l1_reg > 0:
+        pos += l1_reg
+    if l2_reg > 0:
+        pos += param.data * l2_reg
+    multiplier = neg / (pos + 1e-8)
+    if gamma != 1:
+        multiplier.pow_(gamma)
+    param.data.mul_(multiplier)
 
 
 class BaseComponent(Base):
@@ -13,10 +45,12 @@ class BaseComponent(Base):
                  W: Union[Iterable[int], torch.Tensor] = None,
                  H: Union[Iterable[int], torch.Tensor] = None,
                  trainable_W=True,
-                 trainable_H=True):
+                 trainable_H=True,
+                 W_constraints={},
+                 H_constraints={}):
         super().__init__()
 
-        if isinstance(W, Iterabc):
+        if isinstance(W, Iterabc) and trainable_W:
             self.register_parameter('W', Parameter(torch.rand(*W)))
         elif isinstance(W, torch.Tensor):
             self.register_parameter('W', Parameter(torch.empty(*W.size()), requires_grad=trainable_W))
@@ -24,7 +58,7 @@ class BaseComponent(Base):
         else:
             self.register_parameter('W', None)
 
-        if isinstance(H, Iterabc):
+        if isinstance(H, Iterabc) and trainable_H:
             H_shape = (batch,) + tuple(H) if batch > 1 else H
             self.register_parameter('H', Parameter(torch.rand(*H_shape)))
         elif isinstance(W, torch.Tensor):
@@ -60,11 +94,11 @@ class BaseComponent(Base):
         raise NotImplementedError
 
     @staticmethod
-    def get_W_positive(H, WH, beta, *args) -> torch.Tensor:
+    def get_W_kl_positive(H) -> torch.Tensor:
         raise NotImplementedError
 
     @staticmethod
-    def get_H_positive(W, WH, beta, *args) -> torch.Tensor:
+    def get_H_kl_positive(W) -> torch.Tensor:
         raise NotImplementedError
 
     @staticmethod
@@ -102,6 +136,66 @@ class BaseComponent(Base):
         else:
             raise ValueError("Input type isn't valid!")
 
+    def fit(self,
+            V,
+            W=None,
+            H=None,
+            beta=1,
+            tol=1e-4,
+            max_iter=200,
+            verbose=0,
+            alpha=0,
+            l1_ratio=0
+            ):
+
+        if W is None:
+            W = self.W
+        if H is None:
+            H = self.H
+
+        if beta < 1:
+            gamma = 1 / (2 - beta)
+        elif beta > 2:
+            gamma = 1 / (beta - 1)
+        else:
+            gamma = 1
+
+        l1_reg = alpha * l1_ratio
+        l2_reg = alpha * (1 - l1_ratio)
+
+        with torch.no_grad():
+            WH = self.reconstruct(H, W)
+            loss_init = previous_loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
+
+        with tqdm(total=max_iter, disable=not verbose) as pbar:
+            for n_iter in range(max_iter):
+                if W.requires_grad:
+                    WH = self.reconstruct(H.detach(), W)
+                    _double_backward_update(V, WH, W, beta, gamma, l1_reg, l2_reg,
+                                            self.get_W_kl_positive(H.detach()) if beta == 1 else None)
+
+                if H.requires_grad:
+                    WH = self.reconstruct(H, W.detach())
+                    _double_backward_update(V, WH, H, beta, gamma, l1_reg, l2_reg,
+                                            self.get_H_kl_positive(W.detach()) if beta == 1 else None)
+
+                if n_iter % 10 == 9:
+                    with torch.no_grad():
+                        WH = self.reconstruct(H, W)
+                        loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
+                    pbar.set_postfix(loss=loss)
+                    # pbar.set_description('Beta loss=%.4f' % error)
+                    pbar.update(10)
+                    if (previous_loss - loss) / loss_init < tol:
+                        break
+                    previous_loss = loss
+
+        return n_iter
+
+    def fit_transform(self, *args, sparse=False, **kwargs):
+        n_iter = self.fit(*args, **kwargs)
+        return n_iter, self.forward()
+
 
 class NMF(BaseComponent):
     def __init__(self,
@@ -124,29 +218,13 @@ class NMF(BaseComponent):
         return W @ H
 
     @staticmethod
-    def get_W_positive(H, WH, beta):
-        if beta == 1:
-            H_sum = H.sum(1)
-            denominator = H_sum[None, :]
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            WHHt = WH @ H.t()
-            denominator = WHHt
-
-        return denominator
+    def get_W_kl_positive(H):
+        return H.sum(1)
 
     @staticmethod
-    def get_H_positive(W, WH, beta):
-        if beta == 1:
-            W_sum = W.sum(0)
-            denominator = W_sum[:, None]
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            WtWH = W.t() @ WH
-            denominator = WtWH
-        return denominator
+    def get_H_kl_positive(W):
+        W_sum = W.sum(0)
+        return W_sum[:, None]
 
 
 class NMFD(BaseComponent):
@@ -179,41 +257,15 @@ class NMFD(BaseComponent):
         return F.conv1d(H, W.flip(2), padding=pad_size).squeeze(0)
 
     @staticmethod
-    def get_W_positive(H, WH, beta, *args) -> torch.Tensor:
+    def get_W_kl_positive(H) -> torch.Tensor:
         if H.dim() < 3:
             H = H.unsqueeze(0)
-        batch, rank, _ = H.shape
-        *_, K, M = WH.shape
-
-        if beta == 1:
-            denominator = H.sum((0, 2), keepdims=True)
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if batch > 1:
-                WH = WH.view(1, batch * K, M)
-                H = H.unsqueeze(1).expand(-1, K, -1, -1).view(-1, 1, H.shape[-1])
-                WHHt = F.conv1d(WH, H, groups=batch * K)
-                WHHt = WHHt.view(batch, K, rank, WHHt.shape[-1]).sum(0)
-            else:
-                WHHt = F.conv1d(WH.view(K, 1, M), H.transpose(0, 1))
-            denominator = WHHt
-
-        return denominator
+        return H.sum((0, 2), keepdims=True)
 
     @staticmethod
-    def get_H_positive(W, WH, beta, *args) -> torch.Tensor:
-        if beta == 1:
-            W_sum = W.sum((0, 2))
-            denominator = W_sum[:, None]
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if len(WH.shape) < 3:
-                WH = WH.unsqueeze(0)
-            WtWH = F.conv1d(WH, W.transpose(0, 1)).squeeze(0)
-            denominator = WtWH
-        return denominator
+    def get_H_kl_positive(W) -> torch.Tensor:
+        W_sum = W.sum((0, 2))
+        return W_sum[:, None]
 
 
 class NMF2D(BaseComponent):
@@ -251,44 +303,15 @@ class NMF2D(BaseComponent):
         return out
 
     @staticmethod
-    def get_W_positive(H, WH, beta, *args) -> torch.Tensor:
+    def get_W_kl_positive(H) -> torch.Tensor:
         if H.dim() < 4:
             H = H.unsqueeze(0)
-        batch, rank, _ = H.shape
-        *_, channel, K, M = WH.shape
-
-        if beta == 1:
-            denominator = H.sum((0, 2, 3), keepdims=True)
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if batch > 1:
-                WH = WH.view(1, batch * channel, K, M)
-                # batch * channel => batch * channel * rank
-                # H.shape = (batch * channel * rank, 1
-                H = H.unsqueeze(1).expand(-1, channel, -1, -1, -1).view(-1, 1, *H.shape[-2:])
-                WHHt = F.conv2d(WH, H, groups=batch * channel)
-                WHHt = WHHt.view(batch, channel, rank, *WHHt.shape[-2:]).sum(0)
-            else:
-                WH = WH.view(channel, 1, K, M)
-                WHHt = F.conv2d(WH, H.transpose(0, 1))
-            denominator = WHHt
-
-        return denominator
+        return H.sum((0, 2, 3), keepdims=True)
 
     @staticmethod
-    def get_H_positive(W, WH, beta, *args) -> torch.Tensor:
-        if beta == 1:
-            W_sum = W.sum((0, 2, 3))
-            denominator = W_sum[:, None, None]
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if len(WH.shape) < 4:
-                WH = WH.unsqueeze(0)
-            WtWH = F.conv2d(WH, W.transpose(0, 1)).squeeze(0)
-            denominator = WtWH
-        return denominator
+    def get_H_kl_positive(W) -> torch.Tensor:
+        W_sum = W.sum((0, 2, 3))
+        return W_sum[:, None, None]
 
 
 class NMF3D(BaseComponent):
@@ -326,39 +349,12 @@ class NMF3D(BaseComponent):
         return out
 
     @staticmethod
-    def get_W_positive(H, WH, beta, *args) -> torch.Tensor:
+    def get_W_kl_positive(H) -> torch.Tensor:
         if H.dim() < 5:
             H = H.unsqueeze(0)
-        batch, rank, _ = H.shape
-        *_, channel, N, K, M = WH.shape
-
-        if beta == 1:
-            denominator = H.sum((0, 2, 3, 4), keepdims=True)
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if batch > 1:
-                WH = WH.view(1, batch * channel, N, K, M)
-                H = H.unsqueeze(1).expand(-1, channel, -1, -1, -1, -1).view(-1, 1, *H.shape[-3:])
-                WHHt = F.conv3d(WH, H, groups=batch * channel)
-                WHHt = WHHt.view(batch, channel, rank, *WHHt.shape[-3:]).sum(0)
-            else:
-                WH = WH.view(channel, 1, N, K, M)
-                WHHt = F.conv3d(WH, H.transpose(0, 1))
-            denominator = WHHt
-
-        return denominator
+        return H.sum((0, 2, 3, 4), keepdims=True)
 
     @staticmethod
-    def get_H_positive(W, WH, beta, *args) -> torch.Tensor:
-        if beta == 1:
-            W_sum = W.sum((0, 2, 3, 4))
-            denominator = W_sum[:, None, None, None]
-        else:
-            if beta != 2:
-                WH = WH.pow(beta - 1)
-            if len(WH.shape) < 5:
-                WH = WH.unsqueeze(0)
-            WtWH = F.conv3d(WH, W.transpose(0, 1)).squeeze(0)
-            denominator = WtWH
-        return denominator
+    def get_H_kl_positive(W) -> torch.Tensor:
+        W_sum = W.sum((0, 2, 3, 4))
+        return W_sum[:, None, None, None]
