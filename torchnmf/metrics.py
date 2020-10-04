@@ -9,7 +9,7 @@ def KL_divergence(predict, target):
 
 
 def Euclidean(predict, target):
-    return F.mse_loss(predict, target, reduction='sum') / 2
+    return F.mse_loss(predict, target, reduction='sum') * 0.5
 
 
 def IS_divergence(predict, target):
@@ -39,3 +39,13 @@ if __name__ == '__main__':
     x = torch.rand(5, 5)
     y = torch.rand_like(x)
     print((y * (y / x).log()).sum(), F.kl_div(x.log(), y, reduction='sum'))
+    x.requires_grad = True
+
+    loss = Euclidean(x, y)
+    loss.backward()
+    print(x.grad, loss.item())
+    x.grad.zero_()
+
+    loss = Beta_divergence(x, y)
+    loss.backward()
+    print(x.grad, loss.item())
