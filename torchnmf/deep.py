@@ -1,7 +1,7 @@
 import torch
 from torch.nn import Parameter
 import torch.nn.functional as F
-from typing import Union, Iterable
+from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .base import Base
 from .metrics import Beta_divergence
@@ -39,34 +39,43 @@ def _double_backward_update(V, WH, param, beta, gamma, l1_reg, l2_reg, pos=None)
 
 
 class BaseComponent(Base):
+    __constants__ = ['rank', 'batch']
+    __annotations__ = {'W': Optional[torch.Tensor], 'H': Optional[torch.Tensor], 'out_channels': Optional[int],
+                       'kernel_size': Optional[Tuple[int, ...]]}
+
+    rank: int
+    batch: int
+    W: Optional[torch.Tensor]
+    H: Optional[torch.Tensor]
+    out_channels: Optional[int]
+    kernel_size: Optional[Tuple[int, ...]]
+
     def __init__(self,
                  rank=None,
                  batch=1,
                  W: Union[Iterable[int], torch.Tensor] = None,
                  H: Union[Iterable[int], torch.Tensor] = None,
                  trainable_W=True,
-                 trainable_H=True,
-                 W_constraints={},
-                 H_constraints={}):
+                 trainable_H=True):
         super().__init__()
 
-        if isinstance(W, Iterabc) and trainable_W:
-            self.register_parameter('W', Parameter(torch.rand(*W)))
-        elif isinstance(W, torch.Tensor):
+        if isinstance(W, torch.Tensor):
             self.register_parameter('W', Parameter(torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
+        elif isinstance(W, Iterabc) and trainable_W:
+            self.register_parameter('W', Parameter(torch.rand(*W)))
         else:
             self.register_parameter('W', None)
 
-        if isinstance(H, Iterabc) and trainable_H:
-            H_shape = (batch,) + tuple(H) if batch > 1 else H
-            self.register_parameter('H', Parameter(torch.rand(*H_shape)))
-        elif isinstance(W, torch.Tensor):
+        if isinstance(H, torch.Tensor):
             H_shape = H.shape
             if batch > 1 and batch != H_shape[0]:
                 H_shape = (batch,) + H_shape
             self.register_parameter('H', Parameter(torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
+        elif isinstance(H, Iterabc) and trainable_H:
+            H_shape = (batch,) + tuple(H) if batch > 1 else H
+            self.register_parameter('H', Parameter(torch.rand(*H_shape)))
         else:
             self.register_parameter('H', None)
 
@@ -74,6 +83,9 @@ class BaseComponent(Base):
             if isinstance(self.H, torch.Tensor):
                 assert self.W.shape[1] == self.H.shape[1 if batch > 1 else 0], "Latent size of W and H should be equal!"
             rank = self.W.shape[1]
+            self.out_channels = self.W.shape[0]
+            if len(self.W.shape) > 2:
+                self.kernel_size = tuple(self.W.shape[2:])
         elif isinstance(self.H, torch.Tensor):
             rank = self.H.shape[1 if batch > 1 else 0]
         else:
@@ -81,6 +93,16 @@ class BaseComponent(Base):
 
         self.rank = rank
         self.batch = batch
+
+    def extra_repr(self) -> str:
+        s = ('{rank}')
+        if self.batch > 1:
+            s += ', batch={batch}'
+        if self.W is not None:
+            s += ', out_channels={out_channels}'
+            if hasattr(self, 'kernel_size'):
+                s += ', kernel_size={kernel_size}'
+        return s.format(**self.__dict__)
 
     def forward(self, H=None, W=None):
         if H is None:
