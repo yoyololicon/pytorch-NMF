@@ -29,8 +29,8 @@ class _NMF(Base):
     def __init__(self, W_size, H_size, rank):
         super().__init__()
         self.rank = rank
-        self.W = Parameter(torch.rand(*W_size))
-        self.H = Parameter(torch.rand(*H_size))
+        self.W = Parameter(torch.rand(*W_size).double())
+        self.H = Parameter(torch.rand(*H_size).double())
 
     def forward(self, H=None, W=None):
         if H is None:
