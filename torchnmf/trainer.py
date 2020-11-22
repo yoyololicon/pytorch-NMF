@@ -71,7 +71,7 @@ class BetaMu(Optimizer):
                 elif beta == 1:
                     output_neg = V / WH
                     output_pos = torch.ones_like(WH)
-                elif beta == -1:
+                elif beta == 0:
                     output_neg = V / (WH * WH)
                     output_pos = 1 / WH
                 else:
