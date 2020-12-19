@@ -7,4 +7,4 @@ __email__ = 'lolimaster.cs03@nctu.edu.tw'
 
 from .deep import NMF, NMFD, NMF2D, NMF3D
 from .plca import PLCA, SIPLCA, SIPLCA2
-from .trainer import BetaMu
+from .trainer import BetaMu, SparsityProj

@@ -1,6 +1,4 @@
 import torch
-from operator import mul
-from functools import reduce
 from torch.nn import functional as F
 
 
@@ -14,7 +12,7 @@ def Euclidean(predict, target):
 
 def IS_divergence(predict, target):
     div = target / predict
-    return div.sum() - div.log().sum() - reduce(mul, target.shape)
+    return div.sum() - div.log().sum() - target.numel()
 
 
 def Beta_divergence(predict, target, beta=2):

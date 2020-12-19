@@ -1,10 +1,7 @@
 import torch
-from torch import nn
 from torch.optim.optimizer import Optimizer
-import torch.nn.functional as F
 from .deep import BaseComponent, _proj_func
-from .metrics import Beta_divergence
-from collections import defaultdict
+
 
 eps = 1e-8
 
@@ -152,4 +149,5 @@ class SparsityProj(Optimizer):
 
             lr *= 1.2
 
+            group['lr'] = lr
         return loss

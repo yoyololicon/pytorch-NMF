@@ -1,6 +1,8 @@
 import torch
 from torch.nn import Parameter
 import torch.nn.functional as F
+from torch.nn.common_types import _size_1_t, _size_2_t, _size_3_t
+from torch.utils import _single, _pair, _triple
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .base import Base
@@ -8,7 +10,9 @@ from .metrics import Beta_divergence
 from tqdm import tqdm
 
 
-def _proj_func(s: torch.Tensor, k1: float, k2: float):
+def _proj_func(s: torch.Tensor,
+               k1: float,
+               k2: float) -> torch.Tensor:
     s_shape = s.shape
     s = s.contiguous().view(-1)
     N = s.numel()
@@ -35,7 +39,14 @@ def _proj_func(s: torch.Tensor, k1: float, k2: float):
     return v.view(*s_shape)
 
 
-def _double_backward_update(V, WH, param, beta, gamma, l1_reg, l2_reg, pos=None):
+def _double_backward_update(V: torch.Tensor,
+                            WH: torch.Tensor,
+                            param: Parameter,
+                            beta: float,
+                            gamma: float,
+                            l1_reg: float,
+                            l2_reg: float,
+                            pos: torch.Tensor = None):
     param.grad = None
     if beta == 2:
         output_neg = V
@@ -63,6 +74,46 @@ def _double_backward_update(V, WH, param, beta, gamma, l1_reg, l2_reg, pos=None)
     if gamma != 1:
         multiplier.pow_(gamma)
     param.data.mul_(multiplier)
+
+
+def _get_W_kl_positive(H: torch.Tensor) -> torch.Tensor:
+    sum_dims = list(range(H.dim()))
+    sum_dims.remove(1)
+    return H.sum(sum_dims, keepdims=True)
+
+
+def _get_H_kl_positive(W: torch.Tensor) -> torch.Tensor:
+    sum_dims = list(range(W.dim()))
+    sum_dims.remove(1)
+    return W.sum(sum_dims, keepdims=True).squeeze(0)
+
+
+def _get_norm(x: torch.Tensor,
+              axis: int = 1) -> torch.Tensor:
+    x2 = x * x
+    sum_dims = list(range(x2.dim()))
+    sum_dims.remove(axis)
+    return x2.sum(sum_dims).sqrt()
+
+
+@torch.no_grad()
+def renorm(W: torch.Tensor,
+           H: torch.Tensor,
+           unit_norm='W'):
+    if unit_norm == 'W':
+        W_norm = BaseComponent.get_W_norm(W)
+        slicer = (slice(None),) + (None,) * (W.dim() - 2)
+        W /= W_norm[slicer]
+        slicer = (slice(None),) + (None,) * (H.dim() - 2)
+        H *= W_norm[slicer]
+    elif unit_norm == 'H':
+        H_norm = BaseComponent.get_H_norm(H)
+        slicer = (slice(None),) + (None,) * (H.dim() - 2)
+        H /= H_norm[slicer]
+        slicer = (slice(None),) + (None,) * (W.dim() - 2)
+        W *= H_norm[slicer]
+    else:
+        raise ValueError("Input type isn't valid!")
 
 
 class BaseComponent(Base):
@@ -125,7 +176,7 @@ class BaseComponent(Base):
                 s += ', kernel_size={kernel_size}'
         return s.format(**self.__dict__)
 
-    def forward(self, H=None, W=None):
+    def forward(self, H: torch.Tensor=None, W: torch.Tensor=None) -> torch.Tensor:
         if H is None:
             H = self.H
         if W is None:
@@ -133,64 +184,21 @@ class BaseComponent(Base):
         return self.reconstruct(H, W)
 
     @staticmethod
-    def reconstruct(H, W):
+    def reconstruct(H: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
-
-    @staticmethod
-    def get_W_kl_positive(H) -> torch.Tensor:
-        raise NotImplementedError
-
-    @staticmethod
-    def get_H_kl_positive(W) -> torch.Tensor:
-        raise NotImplementedError
-
-    @staticmethod
-    def get_W_norm(W) -> torch.Tensor:
-        W2 = W * W
-        sum_dims = list(range(W2.dim()))
-        sum_dims.remove(1)
-        return W2.sum(sum_dims).sqrt()
-
-    @staticmethod
-    def get_H_norm(H) -> torch.Tensor:
-        H2 = H * H
-        sum_dims = list(range(H2.dim()))
-        sum_dims.remove(1)
-        return H2.sum(sum_dims).sqrt()
-
-    @staticmethod
-    @torch.no_grad()
-    def renorm(W, H, unit_norm='W'):
-        if unit_norm == 'W':
-            W_norm = BaseComponent.get_W_norm(W)
-            slicer = (slice(None),) + (None,) * (W.dim() - 2)
-            W /= W_norm[slicer]
-            slicer = (slice(None),) + (None,) * (H.dim() - 2)
-            H *= W_norm[slicer]
-        elif unit_norm == 'H':
-            H_norm = BaseComponent.get_H_norm(H)
-            slicer = (slice(None),) + (None,) * (H.dim() - 2)
-            H /= H_norm[slicer]
-            slicer = (slice(None),) + (None,) * (W.dim() - 2)
-            W *= H_norm[slicer]
-        else:
-            raise ValueError("Input type isn't valid!")
 
     def fit(self,
             V,
-            W=None,
-            H=None,
             beta=1,
             tol=1e-4,
             max_iter=200,
             verbose=0,
             alpha=0,
             l1_ratio=0
-            ):
-        if W is None:
-            W = self.W
-        if H is None:
-            H = self.H
+            ) -> int:
+
+        W = self.W
+        H = self.H
 
         if beta < 1:
             gamma = 1 / (2 - beta)
@@ -211,19 +219,18 @@ class BaseComponent(Base):
                 if W.requires_grad:
                     WH = self.reconstruct(H.detach(), W)
                     _double_backward_update(V, WH, W, beta, gamma, l1_reg, l2_reg,
-                                            self.get_W_kl_positive(H.detach()) if beta == 1 else None)
+                                            _get_W_kl_positive(H.detach()) if beta == 1 else None)
 
                 if H.requires_grad:
                     WH = self.reconstruct(H, W.detach())
                     _double_backward_update(V, WH, H, beta, gamma, l1_reg, l2_reg,
-                                            self.get_H_kl_positive(W.detach()) if beta == 1 else None)
+                                            _get_H_kl_positive(W.detach()) if beta == 1 else None)
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
                         WH = self.reconstruct(H, W)
                         loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
-                    # pbar.set_description('Beta loss=%.4f' % error)
                     pbar.update(10)
                     if (previous_loss - loss) / loss_init < tol:
                         break
@@ -233,18 +240,14 @@ class BaseComponent(Base):
 
     def sparse_fit(self,
                    V,
-                   W=None,
-                   H=None,
                    beta=1,
                    max_iter=200,
                    verbose=0,
                    sW=None,
                    sH=None,
-                   ):
-        if W is None:
-            W = self.W
-        if H is None:
-            H = self.H
+                   ) -> int:
+        W = self.W
+        H = self.H
 
         if sW is not None and W.requires_grad:
             dim = W[:, 0].numel()
@@ -341,124 +344,55 @@ class BaseComponent(Base):
 class NMF(BaseComponent):
     def __init__(self,
                  Vshape: Iterable[int] = None,
+                 rank: int = None,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
             M, K = Vshape
-            if 'W' in kwargs and 'H' not in kwargs:
-                if isinstance(kwargs['W'], torch.Tensor):
-                    rank = kwargs['W'].shape[1]
-                elif isinstance(kwargs['W'], Iterabc):
-                    rank = kwargs['W'][1]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['H'] = (M, rank)
-            elif 'H' in kwargs and 'W' not in kwargs:
-                if isinstance(kwargs['H'], torch.Tensor):
-                    rank = kwargs['H'].shape[1]
-                elif isinstance(kwargs['H'], Iterabc):
-                    rank = kwargs['H'][1]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['W'] = (K, rank)
-            else:
-                kwargs['rank'] = kwargs.get('rank', K)
+            rank = rank if rank else K
+            kwargs['W'] = (K, rank)
+            kwargs['H'] = (M, rank)
 
-        super().__init__(**kwargs)
+        super().__init__(rank, **kwargs)
 
     @staticmethod
     def reconstruct(H, W):
         return F.linear(H, W)
 
-    @staticmethod
-    def get_W_kl_positive(H):
-        return H.sum(0, keepdim=True)
-
-    @staticmethod
-    def get_H_kl_positive(W):
-        return W.sum(0, keepdim=True)
-
 
 class NMFD(BaseComponent):
     def __init__(self,
                  Vshape: Iterable[int] = None,
-                 T=1,
+                 rank: int = None,
+                 T: int = 1,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
             batch, K, M = Vshape
-            if 'W' in kwargs and 'H' not in kwargs:
-                if isinstance(kwargs['W'], torch.Tensor):
-                    rank, T = kwargs['W'].shape[1:]
-                elif isinstance(kwargs['W'], Iterabc):
-                    rank, T = kwargs['W'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['H'] = (batch, rank, M - T + 1)
-            elif 'H' in kwargs and 'W' not in kwargs:
-                if isinstance(kwargs['H'], torch.Tensor):
-                    rank, M_T = kwargs['H'].shape[1:]
-                elif isinstance(kwargs['H'], Iterabc):
-                    rank, M_T = kwargs['H'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['W'] = (K, rank, M - M_T + 1)
-            else:
-                kwargs['rank'] = kwargs.get('rank', K)
+            rank = rank if rank else K
+            kwargs['W'] = (K, rank, T)
+            kwargs['H'] = (batch, rank, M - T + 1)
 
-        super().__init__(**kwargs)
+        super().__init__(rank, **kwargs)
 
     @staticmethod
     def reconstruct(H, W):
         pad_size = W.shape[2] - 1
         return F.conv1d(H, W.flip(2), padding=pad_size)
 
-    @staticmethod
-    def get_W_kl_positive(H) -> torch.Tensor:
-        return H.sum((0, 2), keepdims=True)
-
-    @staticmethod
-    def get_H_kl_positive(W) -> torch.Tensor:
-        W_sum = W.sum((0, 2))
-        return W_sum[:, None]
-
 
 class NMF2D(BaseComponent):
     def __init__(self,
                  Vshape: Iterable[int] = None,
-                 kernel: Union[Iterable[int], int] = 1,
+                 rank: int = None,
+                 kernel_size: _size_2_t = 1,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
-            try:
-                F, T = kernel
-            except:
-                F = T = kernel
+            kernel_size = _pair(kernel_size)
+            H, W = kernel_size
             batch, channel, K, M = Vshape
-
-            if 'W' in kwargs and 'H' not in kwargs:
-                if isinstance(kwargs['W'], torch.Tensor):
-                    rank, F, T = kwargs['W'].shape[1:]
-                elif isinstance(kwargs['W'], Iterabc):
-                    rank, F, T = kwargs['W'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['H'] = (batch, rank, K - F + 1, M - T + 1)
-            elif 'H' in kwargs and 'W' not in kwargs:
-                if isinstance(kwargs['H'], torch.Tensor):
-                    rank, K_F, M_T = kwargs['H'].shape[1:]
-                elif isinstance(kwargs['H'], Iterabc):
-                    rank, K_F, M_T = kwargs['H'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['W'] = (channel, rank, K - K_F + 1, M - M_T + 1)
-            else:
-                kwargs['rank'] = kwargs.get('rank', K)
-
-        super().__init__(**kwargs)
+            rank = rank if rank else K
+            kwargs['W'] = (channel, rank,) + kernel_size
+            kwargs['H'] = (batch, rank, K - H + 1, M - W + 1)
+        super().__init__(rank, **kwargs)
 
     @staticmethod
     def reconstruct(H, W):
@@ -466,62 +400,25 @@ class NMF2D(BaseComponent):
         out = F.conv2d(H, W.flip((2, 3)), padding=pad_size)
         return out
 
-    @staticmethod
-    def get_W_kl_positive(H) -> torch.Tensor:
-        return H.sum((0, 2, 3), keepdims=True)
-
-    @staticmethod
-    def get_H_kl_positive(W) -> torch.Tensor:
-        W_sum = W.sum((0, 2, 3))
-        return W_sum[:, None, None]
-
 
 class NMF3D(BaseComponent):
     def __init__(self,
                  Vshape: Iterable[int] = None,
-                 kernel: Union[Iterable[int], int] = 1,
+                 rank: int = None,
+                 kernel_size: _size_3_t = 1,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
-            try:
-                T, H, W = kernel
-            except:
-                T = H = W = kernel
+            kernel_size = _triple(kernel_size)
+            D, H, W = kernel_size
             batch, channel, N, K, M = Vshape
+            rank = rank if rank else K
+            kwargs['W'] = (channel, rank) + kernel_size
+            kwargs['H'] = (batch, rank, N - D + 1, K - H + 1, M - W + 1)
 
-            if 'W' in kwargs and 'H' not in kwargs:
-                if isinstance(kwargs['W'], torch.Tensor):
-                    rank, N, K, M = kwargs['W'].shape[1:]
-                elif isinstance(kwargs['W'], Iterabc):
-                    rank, N, K, M = kwargs['W'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['H'] = (batch, rank, N - T + 1, K - H + 1, M - W + 1)
-            elif 'H' in kwargs and 'W' not in kwargs:
-                if isinstance(kwargs['H'], torch.Tensor):
-                    rank, N_T, K_H, M_W = kwargs['H'].shape[1:]
-                elif isinstance(kwargs['H'], Iterabc):
-                    rank, N_T, K_H, M_W = kwargs['H'][1:]
-                else:
-                    rank = None
-                if rank:
-                    kwargs['W'] = (channel, rank, N - N_T + 1, K - K_H + 1, M - M_W + 1)
-            else:
-                kwargs['rank'] = kwargs.get('rank', K)
-
-        super().__init__(**kwargs)
+        super().__init__(rank, **kwargs)
 
     @staticmethod
     def reconstruct(H, W):
         pad_size = (W.shape[2] - 1, W.shape[3] - 1, W.shape[4] - 1)
         out = F.conv3d(H, W.flip((2, 3, 4)), padding=pad_size)
         return out
-
-    @staticmethod
-    def get_W_kl_positive(H) -> torch.Tensor:
-        return H.sum((0, 2, 3, 4), keepdims=True)
-
-    @staticmethod
-    def get_H_kl_positive(W) -> torch.Tensor:
-        W_sum = W.sum((0, 2, 3, 4))
-        return W_sum[:, None, None, None]
