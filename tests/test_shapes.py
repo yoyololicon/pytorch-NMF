@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from torch import nn
 
-from torchnmf.deep import BaseComponent, NMF
+from torchnmf.nmf import BaseComponent, NMF
 
 @pytest.mark.parametrize('rank', [8])
 @pytest.mark.parametrize('W', [(50, 8), torch.rand(50, 8), None])

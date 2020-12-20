@@ -1,6 +1,6 @@
 import torch
 from torch.optim.optimizer import Optimizer
-from .deep import BaseComponent, _proj_func
+from .nmf import _proj_func, _get_norm
 
 
 eps = 1e-8
@@ -30,8 +30,6 @@ class BetaMu(Optimizer):
         closure = torch.enable_grad()(closure)
 
         status_cache = dict()
-
-        orig_loss = None
 
         for group in self.param_groups:
             for p in group['params']:
@@ -86,9 +84,8 @@ class BetaMu(Optimizer):
                 if l2_reg > 0:
                     pos.add_(p, alpha=l2_reg)
 
-                if isinstance(ortho, tuple):
-                    axis, ld = ortho
-                    pos.add_(p.sum(axis, keepdims=True) - p, alpha=ld)
+                if ortho > 0:
+                    pos.add_(p.sum(1, keepdims=True) - p, alpha=ortho)
 
                 pos.add_(eps)
                 neg.add_(eps)
@@ -107,10 +104,10 @@ class BetaMu(Optimizer):
 
 
 class SparsityProj(Optimizer):
-    def __init__(self, params, sparsity):
+    def __init__(self, params, sparsity, axis=1, max_iter=10):
         if not 0.0 < sparsity < 1.:
             raise ValueError("Invalid sparsity value: {}".format(sparsity))
-        defaults = dict(sparsity=sparsity, lr=1)
+        defaults = dict(sparsity=sparsity, lr=1, axis=axis, max_iter=max_iter)
         super(SparsityProj, self).__init__(params, defaults)
 
     @torch.no_grad()
@@ -120,31 +117,31 @@ class SparsityProj(Optimizer):
         for group in self.param_groups:
             sparsity = group['sparsity']
             lr = group['lr']
+            axis = group['axis']
+            max_iter = group['max_iter']
 
             with torch.enable_grad():
                 init_loss = closure()
-
-            grad_dict = dict()
+                init_loss.backward()
 
             params = [p for p in group['params'] if p.grad is not None]
-            for p in params:
-                grad_dict[id(p)] = p.grad.clone()
 
-            for i in range(10):
+            for i in range(max_iter):
                 for p in params:
-                    norms = BaseComponent.get_W_norm(p)
-                    p.add_(grad_dict[id(p)], alpha=-lr)
-                    dim = p[:, 0].numel()
+                    norms = _get_norm(p, axis)
+                    p.add_(p.grad, alpha=-lr)
+                    dim = p.numel() // p.shape[axis]
                     L1 = dim ** 0.5 * (1 - sparsity) + sparsity
-                    for j in range(p.shape[1]):
-                        p[:, j] = _proj_func(p[:, j], L1 * norms[j], norms[j] ** 2)
+                    for j in range(p.shape[axis]):
+                        slicer = (slice(None),) * axis + (j,)
+                        p[slicer] = _proj_func(p[slicer], L1 * norms[j], norms[j] ** 2)
 
                 loss = closure()
                 if loss <= init_loss:
                     break
 
                 for p in params:
-                    p.add_(grad_dict[id(p)], alpha=lr)
+                    p.add_(p.grad, alpha=lr)
                 lr *= 0.5
 
             lr *= 1.2

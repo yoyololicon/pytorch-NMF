@@ -11,5 +11,3 @@ def renorm_(input: torch.Tensor, dim=0):
     sum_dims = list(range(input.dim()))
     sum_dims.remove(dim)
     input /= tmp.sum(sum_dims, keepdim=True)
-
-

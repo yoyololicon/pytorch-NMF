@@ -3,16 +3,15 @@ from torch.nn import functional as F
 
 
 def KL_divergence(predict, target):
-    return F.kl_div(predict.log(), target, reduction='sum') - target.sum() + predict.sum()
-
+    return F.kl_div(predict.add(1e-8).log(), target, reduction='sum') - target.sum() + predict.sum()
 
 def Euclidean(predict, target):
     return F.mse_loss(predict, target, reduction='sum') * 0.5
 
 
 def IS_divergence(predict, target):
-    div = target / predict
-    return div.sum() - div.log().sum() - target.numel()
+    div = target / predict.add(1e-8)
+    return div.sum() - div.add(1e-8).log().sum() - target.numel()
 
 
 def Beta_divergence(predict, target, beta=2):

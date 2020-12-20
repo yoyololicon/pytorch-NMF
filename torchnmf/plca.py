@@ -6,6 +6,10 @@ from .utils import normalize
 from tqdm import tqdm
 from .metrics import KL_divergence
 
+__all__ = [
+    'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
+]
+
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
     # type: (Tensor, Tensor, Tensor, Tensor, Tensor, float, float, float) -> Tensor
