@@ -4,7 +4,7 @@ from torch.nn import Parameter
 from .base import Base
 from .utils import normalize
 from tqdm import tqdm
-from .metrics import KL_divergence
+from .metrics import kl_div
 
 __all__ = [
     'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
@@ -74,11 +74,11 @@ class _PLCA(Base):
                 WZH = self.reconstruct(self.W, self.Z, self.H)
 
                 log_prob = _log_probability(V, WZH, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
-                loss = KL_divergence(WZH, V).item()
+                loss = kl_div(WZH, V).item()
 
                 self.update_params(V / WZH, update_W, update_H, update_Z, W_alpha, Z_alpha, H_alpha)
 
-                pbar.set_postfix(Log_likelihood=log_prob, KL_divergence=loss)
+                pbar.set_postfix(Log_likelihood=log_prob, kl_div=loss)
                 # pbar.set_description('Log likelihood=%.4f' % log_prob)
                 pbar.update()
 

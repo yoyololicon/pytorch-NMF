@@ -5,6 +5,7 @@ torchnmf.nmf
    :members:
    :undoc-members:
    :show-inheritance:
+   :exclude-members: W, H
 
 .. automodule:: torchnmf.nmf
    :members:

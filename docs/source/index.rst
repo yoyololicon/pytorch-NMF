@@ -19,6 +19,7 @@ Welcome to torchnmf's documentation!
    :caption: Package Reference
 
    modules/nmf
+   modules/metrics
 
 
 Indices and tables

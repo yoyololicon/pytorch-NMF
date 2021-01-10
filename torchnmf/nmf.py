@@ -6,7 +6,7 @@ from torch.nn.modules.utils import _single, _pair, _triple
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .base import Base
-from .metrics import Beta_divergence
+from .metrics import beta_div
 from tqdm import tqdm
 
 _size_1_t = Union[int, Tuple[int]]
@@ -137,6 +137,12 @@ class BaseComponent(torch.nn.Module):
         trainable_W (bool):  If ``True``, the template tensor W is learnable. Default: ``True``
         trainable_H (bool):  If ``True``, the activation tensor H is learnable. Default: ``True``
 
+    Attributes:
+        W (Tensor or None): the template tensor of the module if corresponding argument is given.
+            The values are initialized non-negatively.
+        H (Tensor or None): the activation tensor of the module if corresponding argument is given.
+            The values are initialized non-negatively.
+
        """
     __constants__ = ['rank']
     __annotations__ = {'W': Optional[Tensor],
@@ -198,7 +204,7 @@ class BaseComponent(torch.nn.Module):
         return s.format(**self.__dict__)
 
     def forward(self, H: Tensor = None, W: Tensor = None) -> Tensor:
-        r"""An outer wrapper of :meth:`self.reconstruct(H, W) <torchnmf.nmf.BaseComponent.reconstruct>`.
+        r"""An outer wrapper of :meth:`self.reconstruct(H,W) <torchnmf.nmf.BaseComponent.reconstruct>`.
 
         .. note::
                 Should call the :class:`BaseComponent` instance afterwards
@@ -275,7 +281,7 @@ class BaseComponent(torch.nn.Module):
 
         with torch.no_grad():
             WH = self.reconstruct(H, W)
-            loss_init = previous_loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
+            loss_init = previous_loss = beta_div(WH, V, beta).mul(2).sqrt().item()
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
@@ -292,7 +298,7 @@ class BaseComponent(torch.nn.Module):
                 if n_iter % 10 == 9:
                     with torch.no_grad():
                         WH = self.reconstruct(H, W)
-                        loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
+                        loss = beta_div(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
                     if (previous_loss - loss) / loss_init < tol:
@@ -371,7 +377,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         W.grad = None
                         WH = self.reconstruct(H.detach(), W)
-                        loss = Beta_divergence(self.fix_neg(WH), V, beta)
+                        loss = beta_div(self.fix_neg(WH), V, beta)
                         loss.backward()
                         with torch.no_grad():
                             for i in range(10):
@@ -379,8 +385,8 @@ class BaseComponent(torch.nn.Module):
                                 norms = _get_norm(Wnew)
                                 for j in range(Wnew.shape[1]):
                                     Wnew[:, j] = _proj_func(Wnew[:, j], L1a * norms[j], norms[j] ** 2)
-                                new_loss = Beta_divergence(self.fix_neg(self.reconstruct(self.H, Wnew)),
-                                                           V, beta)
+                                new_loss = beta_div(self.fix_neg(self.reconstruct(self.H, Wnew)),
+                                                    V, beta)
                                 if new_loss <= loss:
                                     break
 
@@ -397,7 +403,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         H.grad = None
                         WH = self.reconstruct(H, W.detach())
-                        loss = Beta_divergence(self.fix_neg(WH), V, beta)
+                        loss = beta_div(self.fix_neg(WH), V, beta)
                         loss.backward()
 
                         with torch.no_grad():
@@ -406,8 +412,8 @@ class BaseComponent(torch.nn.Module):
                                 norms = _get_norm(Hnew)
                                 for j in range(H.shape[1]):
                                     Hnew[:, j] = _proj_func(Hnew[:, j], L1s * norms[j], norms[j] ** 2)
-                                new_loss = Beta_divergence(self.fix_neg(self.reconstruct(Hnew, W)),
-                                                           V, beta)
+                                new_loss = beta_div(self.fix_neg(self.reconstruct(Hnew, W)),
+                                                    V, beta)
                                 if new_loss <= loss:
                                     break
 
@@ -421,7 +427,7 @@ class BaseComponent(torch.nn.Module):
                 if n_iter % 10 == 9:
                     with torch.no_grad():
                         WH = self.reconstruct(H, W)
-                        loss = Beta_divergence(WH, V, beta).mul(2).sqrt().item()
+                        loss = beta_div(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
         return n_iter
@@ -449,12 +455,6 @@ class NMF(BaseComponent):
         - V: :math:`(N, C)`
         - W: :math:`(C, R)`
         - H: :math:`(N, R)`
-
-    Attributes:
-        W (Tensor): the learnable template tensor of the module
-            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
-        H (Tensor): the learnable activation tensor of the module
-            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
 
 
     Examples::
@@ -525,13 +525,6 @@ class NMFD(BaseComponent):
         .. math::
             L_{in} = L_{out} - T + 1
 
-
-    Attributes:
-        W (Tensor): the learnable template tensor of the module
-            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
-        H (Tensor): the learnable activation tensor of the module
-            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
-
     Examples::
 
         >>> V = torch.rand(33, 50).unsqueeze(0)
@@ -600,20 +593,13 @@ class NMF2D(BaseComponent):
 
     Shape:
         - V: :math:`(N, C, L_{out}, M_{out})`
-        - W: :math:`(C, R, \text{kernel_size}[0], ext{kernel_size}[1])`
+        - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1])`
         - H: :math:`(N, R, L_{in}, M_{in})` where
 
         .. math::
             L_{in} = L_{out} - \text{kernel_size}[0] + 1
         .. math::
             M_{in} = M_{out} - \text{kernel_size}[1] + 1
-
-
-    Attributes:
-        W (Tensor): the learnable template tensor of the module
-            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
-        H (Tensor): the learnable activation tensor of the module
-            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
 
     Examples::
 
@@ -684,13 +670,6 @@ class NMF3D(BaseComponent):
             M_{in} = M_{out} - \text{kernel_size}[1] + 1
         .. math::
             O_{in} = O_{out} - \text{kernel_size}[2] + 1
-
-
-    Attributes:
-        W (Tensor): the learnable template tensor of the module
-            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
-        H (Tensor): the learnable activation tensor of the module
-            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
 
     Examples::
 
