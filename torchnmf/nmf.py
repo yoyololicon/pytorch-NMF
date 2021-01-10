@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.modules.utils import _single, _pair, _triple
@@ -12,15 +13,14 @@ _size_1_t = Union[int, Tuple[int]]
 _size_2_t = Union[int, Tuple[int, int]]
 _size_3_t = Union[int, Tuple[int, int, int]]
 
-
 __all__ = [
     'BaseComponent', 'NMF', 'NMFD', 'NMF2D', 'NMF3D'
 ]
 
 
-def _proj_func(s: torch.Tensor,
+def _proj_func(s: Tensor,
                k1: float,
-               k2: float) -> torch.Tensor:
+               k2: float) -> Tensor:
     s_shape = s.shape
     s = s.contiguous().view(-1)
     N = s.numel()
@@ -47,14 +47,14 @@ def _proj_func(s: torch.Tensor,
     return v.view(*s_shape)
 
 
-def _double_backward_update(V: torch.Tensor,
-                            WH: torch.Tensor,
+def _double_backward_update(V: Tensor,
+                            WH: Tensor,
                             param: Parameter,
                             beta: float,
                             gamma: float,
                             l1_reg: float,
                             l2_reg: float,
-                            pos: torch.Tensor = None):
+                            pos: Tensor = None):
     param.grad = None
     if beta == 2:
         output_neg = V
@@ -84,20 +84,20 @@ def _double_backward_update(V: torch.Tensor,
     param.data.mul_(multiplier)
 
 
-def _get_W_kl_positive(H: torch.Tensor) -> torch.Tensor:
+def _get_W_kl_positive(H: Tensor) -> Tensor:
     sum_dims = list(range(H.dim()))
     sum_dims.remove(1)
     return H.sum(sum_dims, keepdims=True)
 
 
-def _get_H_kl_positive(W: torch.Tensor) -> torch.Tensor:
+def _get_H_kl_positive(W: Tensor) -> Tensor:
     sum_dims = list(range(W.dim()))
     sum_dims.remove(1)
     return W.sum(sum_dims, keepdims=True).squeeze(0)
 
 
-def _get_norm(x: torch.Tensor,
-              axis: int = 1) -> torch.Tensor:
+def _get_norm(x: Tensor,
+              axis: int = 1) -> Tensor:
     x2 = x * x
     sum_dims = list(range(x2.dim()))
     sum_dims.remove(axis)
@@ -105,9 +105,9 @@ def _get_norm(x: torch.Tensor,
 
 
 @torch.no_grad()
-def _renorm(W: torch.Tensor,
-           H: torch.Tensor,
-           unit_norm='W'):
+def _renorm(W: Tensor,
+            H: Tensor,
+            unit_norm='W'):
     if unit_norm == 'W':
         W_norm = BaseComponent.get_W_norm(W)
         slicer = (slice(None),) + (None,) * (W.dim() - 2)
@@ -124,28 +124,41 @@ def _renorm(W: torch.Tensor,
         raise ValueError("Input type isn't valid!")
 
 
-class BaseComponent(Base):
+class BaseComponent(torch.nn.Module):
+    r"""Base class for all NMF modules.
+
+    You can't use this module directly.
+    Your models should also subclass this class.
+
+    Args:
+        rank (int): Size of hidden dimension
+        W (tuple or Tensor): Size or initial weights of template tensor W
+        H (tuple or Tensor): Size or initial weights of activation tensor H
+        trainable_W (bool):  If ``True``, the template tensor W is learnable. Default: ``True``
+        trainable_H (bool):  If ``True``, the activation tensor H is learnable. Default: ``True``
+
+       """
     __constants__ = ['rank']
-    __annotations__ = {'W': Optional[torch.Tensor],
-                       'H': Optional[torch.Tensor],
+    __annotations__ = {'W': Optional[Tensor],
+                       'H': Optional[Tensor],
                        'out_channels': Optional[int],
                        'kernel_size': Optional[Tuple[int, ...]]}
 
     rank: int
-    W: Optional[torch.Tensor]
-    H: Optional[torch.Tensor]
+    W: Optional[Tensor]
+    H: Optional[Tensor]
     out_channels: Optional[int]
     kernel_size: Optional[Tuple[int, ...]]
 
     def __init__(self,
-                 rank=None,
-                 W: Union[Iterable[int], torch.Tensor] = None,
-                 H: Union[Iterable[int], torch.Tensor] = None,
-                 trainable_W=True,
-                 trainable_H=True):
+                 rank: int = None,
+                 W: Union[Iterable[int], Tensor] = None,
+                 H: Union[Iterable[int], Tensor] = None,
+                 trainable_W: bool = True,
+                 trainable_H: bool = True):
         super().__init__()
 
-        if isinstance(W, torch.Tensor):
+        if isinstance(W, Tensor):
             self.register_parameter('W', Parameter(torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
         elif isinstance(W, Iterabc) and trainable_W:
@@ -153,7 +166,7 @@ class BaseComponent(Base):
         else:
             self.register_parameter('W', None)
 
-        if isinstance(H, torch.Tensor):
+        if isinstance(H, Tensor):
             H_shape = H.shape
             self.register_parameter('H', Parameter(torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
@@ -162,14 +175,14 @@ class BaseComponent(Base):
         else:
             self.register_parameter('H', None)
 
-        if isinstance(self.W, torch.Tensor):
-            if isinstance(self.H, torch.Tensor):
+        if isinstance(self.W, Tensor):
+            if isinstance(self.H, Tensor):
                 assert self.W.shape[1] == self.H.shape[1], "Latent size of W and H should be equal!"
             rank = self.W.shape[1]
             self.out_channels = self.W.shape[0]
             if len(self.W.shape) > 2:
                 self.kernel_size = tuple(self.W.shape[2:])
-        elif isinstance(self.H, torch.Tensor):
+        elif isinstance(self.H, Tensor):
             rank = self.H.shape[1]
         else:
             assert rank, "A rank should be given when both W and H are not available!"
@@ -184,7 +197,23 @@ class BaseComponent(Base):
                 s += ', kernel_size={kernel_size}'
         return s.format(**self.__dict__)
 
-    def forward(self, H: torch.Tensor=None, W: torch.Tensor=None) -> torch.Tensor:
+    def forward(self, H: Tensor = None, W: Tensor = None) -> Tensor:
+        r"""An outer wrapper of :meth:`self.reconstruct(H, W) <torchnmf.nmf.BaseComponent.reconstruct>`.
+
+        .. note::
+                Should call the :class:`BaseComponent` instance afterwards
+                instead of this since the former takes care of running the
+                registered hooks while the latter silently ignores them.
+
+        Args:
+            H(Tensor, optional): input activation tensor H. If no tensor was given will use :attr:`H` from this module
+                                instead.
+            W(Tensor, optional): input template tensor W. If no tensor was given will use :attr:`W` from this module
+                                instead.
+
+        Returns:
+            tensor
+        """
         if H is None:
             H = self.H
         if W is None:
@@ -192,18 +221,44 @@ class BaseComponent(Base):
         return self.reconstruct(H, W)
 
     @staticmethod
-    def reconstruct(H: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
+    def reconstruct(H: Tensor, W: Tensor) -> Tensor:
+        r"""Defines the computation performed at every call.
+
+            Should be overridden by all subclasses.
+            """
         raise NotImplementedError
 
     def fit(self,
-            V,
-            beta=1,
-            tol=1e-4,
-            max_iter=200,
-            verbose=0,
-            alpha=0,
-            l1_ratio=0
+            V: Tensor,
+            beta: float = 1,
+            tol: float = 1e-4,
+            max_iter: int = 200,
+            verbose: bool = False,
+            alpha: float = 0,
+            l1_ratio: float = 0
             ) -> int:
+        r"""Learn a NMF model for the data V by minimizing beta divergence.
+
+        To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`W <torchnmf.nmf.BaseComponent.H>` should be presented in this module.
+
+        Args:
+            V (Tensor): data tensor to be decomposed.
+            beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
+                        Default: ``1.``.
+            tol (float): tolerance of the stopping condition. Default: ``1e-4``.
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
+            verbose (bool): whether to be verbose. Default: ``False``.
+            alpha (float): constant that multiplies the regularization terms. Set it to zero to have no regularization.
+                            Default: ``0``.
+            l1_ratio (float):  the regularization mixing parameter, with 0 <= l1_ratio <= 1.
+                                For l1_ratio = 0 the penalty is an elementwise L2 penalty (aka Frobenius Norm).
+                                For l1_ratio = 1 it is an elementwise L1 penalty.
+                                For 0 < l1_ratio < 1, the penalty is a combination of L1 and L2. Default: ``0``.
+
+        Returns:
+            total number of iterations.
+        """
 
         W = self.W
         H = self.H
@@ -254,6 +309,29 @@ class BaseComponent(Base):
                    sW=None,
                    sH=None,
                    ) -> int:
+        r"""Learn a NMF model for the data V by minimizing beta divergence with sparseness constraints proposed in
+        `Non-negative Matrix Factorization with Sparseness Constraints`_.
+
+        To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`W <torchnmf.nmf.BaseComponent.H>` should be presented in this module.
+
+        .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
+            https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
+
+        Args:
+            V (Tensor): data tensor to be decomposed.
+            beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
+                        Default: ``1.``.
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
+            verbose (bool): whether to be verbose. Default: ``False``.
+            sW (float or None): the target sparseness for template tensor :attr:`W` , with 0 < sW < 1. Set it to ``None``
+                will have no constraint. Default: ``None``
+            sH (float or None): the target sparseness for activation tensor :attr:`H` , with 0 < sH < 1. Set it to ``None``
+                will have no constraint. Default: ``None``
+
+        Returns:
+            total number of iterations.
+        """
         W = self.W
         H = self.H
 
@@ -350,6 +428,49 @@ class BaseComponent(Base):
 
 
 class NMF(BaseComponent):
+    r"""Non-Negative Matrix Factorization (NMF).
+
+    Find two non-negative matrices (W, H) whose product approximates the non-
+    negative matrix V: :math:`V \approx WH`
+
+    This factorization can be used for example for dimensionality reduction, source separation or topic extraction.
+
+    Note:
+        To match with PyTorch convention, this class actually use :math:`H^T` so the batch dimension is the first
+        dimension, and require input target matrix V is also transposed.
+
+    Args:
+        Vshape (tuple, optional): Size of target matrix V
+        rank (int, optional): Size of hidden dimension
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C)`
+        - W: :math:`(C, R)`
+        - H: :math:`(N, R)`
+
+    Attributes:
+        W (Tensor): the learnable template tensor of the module
+            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
+        H (Tensor): the learnable activation tensor of the module
+            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
+
+
+    Examples::
+
+        >>> V = torch.rand(30, 20)
+        >>> m = NMF(V.t().shape, 5)
+        >>> m.W.size()
+        torch.Size([30, 5])
+        >>> m.H.size()
+        torch.Size([20, 5])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([20, 30])
+
+    """
+
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
@@ -368,12 +489,73 @@ class NMF(BaseComponent):
 
 
 class NMFD(BaseComponent):
+    r"""Non-negative Matrix Factor Deconvolution (NMFD).
+
+    Find non-negative matrix H and 3-dimensional tensor W whose convolutional output approximates the non-
+    negative matrix V:
+
+    .. math::
+        \mathbf{V} \approx \sum_{t=0}^{T-1} \mathbf{W}_{t} \cdot \stackrel{t \rightarrow}{\mathbf{H}}
+
+    More precisely:
+
+    .. math::
+        V_{i,j} \approx \sum_{t=0}^{T-1} \sum_{r=0}^{\text{rank}-1}
+        W_{i,r,t} * H_{r, j - t}
+
+    Look at the paper:
+    `Non-negative Matrix Factor Deconvolution; Extraction of Multiple Sound Sources from Monophonic Inputs`_
+    by Paris Smaragdis (2004) for more details.
+
+    Note:
+        To match with PyTorch convention, an extra batch dimension is required for target matrix V.
+
+    Args:
+        Vshape (tuple, optional): Size of target matrix V
+        rank (int, optional): Size of hidden dimension
+        T (int, optional): Size of the convolving window
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C, L_{out})`
+        - W: :math:`(C, R, T)`
+        - H: :math:`(N, R, L_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - T + 1
+
+
+    Attributes:
+        W (Tensor): the learnable template tensor of the module
+            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
+        H (Tensor): the learnable activation tensor of the module
+            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
+
+    Examples::
+
+        >>> V = torch.rand(33, 50).unsqueeze(0)
+        >>> m = NMF(V.shape, 16, 3)
+        >>> m.W.size()
+        torch.Size([33, 16, 3])
+        >>> m.H.size()
+        torch.Size([1, 16, 48])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([1, 33, 50])
+
+    .. _Non-negative Matrix Factor Deconvolution; Extraction of Multiple Sound Sources from Monophonic Inputs:
+        https://www.math.uci.edu/icamp/summer/research_11/esser/nmfaudio.pdf
+
+    """
+
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
-                 T: int = 1,
+                 T: _size_1_t = 1,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
+            T = _single(T)
             batch, K, M = Vshape
             rank = rank if rank else K
             kwargs['W'] = (K, rank, T)
@@ -388,6 +570,68 @@ class NMFD(BaseComponent):
 
 
 class NMF2D(BaseComponent):
+    r"""Nonnegative Matrix Factor 2-D Deconvolution (NMF2D).
+
+    Find non-negative 3-dimensional tensor H and 4-dimensional tensor W whose 2D convolutional output
+    approximates the non-negative 3-dimensional tensor V:
+
+    .. math::
+        \mathbf{V} \approx \sum_{\tau} \sum_{\phi} \stackrel{\downarrow \phi}{\mathbf{W}^{\tau}}
+        \stackrel{\rightarrow \tau}{\mathbf{H}^{\phi}}
+
+    More precisely:
+
+    .. math::
+        V_{i,j,k} \approx \sum_{l=0}^{k_1-1} \sum_{m=0}^{k_2-1} \sum_{r=0}^{\text{rank}-1}
+        W_{i,r,l,m} * H_{r, j-l,k-m}
+
+    Look at the paper:
+    `Nonnegative Matrix Factor 2-D Deconvolution for Blind Single Channel Source Separation`_
+    by Schmidt et al. (2006) for more details.
+
+    Note:
+        To match with PyTorch convention, an extra batch dimension is required for target tensor V.
+
+    Args:
+        Vshape (tuple, optional): Size of target tensor V
+        rank (int, optional): Size of hidden dimension
+        kernel_size (int or tuple, optional): Size of the convolving kernel
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+    Shape:
+        - V: :math:`(N, C, L_{out}, M_{out})`
+        - W: :math:`(C, R, \text{kernel_size}[0], ext{kernel_size}[1])`
+        - H: :math:`(N, R, L_{in}, M_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - \text{kernel_size}[0] + 1
+        .. math::
+            M_{in} = M_{out} - \text{kernel_size}[1] + 1
+
+
+    Attributes:
+        W (Tensor): the learnable template tensor of the module
+            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
+        H (Tensor): the learnable activation tensor of the module
+            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
+
+    Examples::
+
+        >>> V = torch.rand(33, 50).unsqueeze(0).unsqueeze(0)
+        >>> m = NMF2D(V.shape, 16, 3)
+        >>> m.W.size()
+        torch.Size([1, 16, 3, 3])
+        >>> m.H.size()
+        torch.Size([1, 16, 31, 48])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([1, 1, 33, 50])
+
+    .. _Nonnegative Matrix Factor 2-D Deconvolution for Blind Single Channel Source Separation:
+        https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.422.6689&rep=rep1&type=pdf
+
+        """
+
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
@@ -410,6 +654,58 @@ class NMF2D(BaseComponent):
 
 
 class NMF3D(BaseComponent):
+    r"""Nonnegative Matrix Factor 3-D Deconvolution (NMF3D).
+
+    Find non-negative 4-dimensional tensor H and 5-dimensional tensor W whose 2D convolutional output
+    approximates the non-negative 4-dimensional tensor V:
+
+    .. math::
+        V_{i,j,k,l} \approx \sum_{m=0}^{k_1-1} \sum_{n=0}^{k_2-1} \sum_{u=0}^{k_3-1} \sum_{r=0}^{\text{rank}-1}
+        W_{i,r,m,n,u} * H_{r,j-m,k-n,l-u}
+
+    Note:
+        To match with PyTorch convention, an extra batch dimension is required for target tensor V.
+
+    Args:
+        Vshape (tuple, optional): Size of target tensor V
+        rank (int, optional): Size of hidden dimension
+        kernel_size (int or tuple, optional): Size of the convolving kernel
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C, L_{out}, M_{out}, O_{out})`
+        - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1], \text{kernel_size}[2])`
+        - H: :math:`(N, R, L_{in}, M_{in}, O_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - \text{kernel_size}[0] + 1
+        .. math::
+            M_{in} = M_{out} - \text{kernel_size}[1] + 1
+        .. math::
+            O_{in} = O_{out} - \text{kernel_size}[2] + 1
+
+
+    Attributes:
+        W (Tensor): the learnable template tensor of the module
+            if :attr:`trainable_W` is ``True``. The values are initialized non-negatively.
+        H (Tensor): the learnable activation tensor of the module
+            if :attr:`trainable_H` is ``True``. The values are initialized non-negatively.
+
+    Examples::
+
+        >>> V = torch.rand(3, 64, 64, 100).unsqueeze(0)
+        >>> m = NMF3D(V.shape, 8, (5, 5, 20))
+        >>> m.W.size()
+        torch.Size([3, 8, 5, 5, 20])
+        >>> m.H.size()
+        torch.Size([1, 8, 60, 60, 81])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([1, 3, 64, 64, 100])
+
+    """
+
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
