@@ -10,27 +10,23 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
-
-
-# -- Project information -----------------------------------------------------
-
 import os
 import sys
 
 sys.path.insert(0, os.path.abspath('../..'))
 
-import torchnmf
+# -- Project information -----------------------------------------------------
+
+
+from torchnmf import __version__
 
 project = 'torchnmf'
 copyright = '2021, Chin Yun Yu'
 author = 'Chin Yun Yu'
 
 # The full version, including alpha/beta/rc tags
-release = torchnmf.__version__
-version = torchnmf.__version__
+release = __version__
+version = __version__
 
 # -- General configuration ---------------------------------------------------
 
