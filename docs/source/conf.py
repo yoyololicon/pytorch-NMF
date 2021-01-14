@@ -12,21 +12,19 @@
 #
 import os
 import sys
+import torchnmf
 
 sys.path.insert(0, os.path.abspath('../..'))
 
 # -- Project information -----------------------------------------------------
-
-
-from torchnmf import __version__
 
 project = 'torchnmf'
 copyright = '2021, Chin Yun Yu'
 author = 'Chin Yun Yu'
 
 # The full version, including alpha/beta/rc tags
-release = __version__
-version = __version__
+release = torchnmf.__version__
+version = torchnmf.__version__
 
 # -- General configuration ---------------------------------------------------
 
