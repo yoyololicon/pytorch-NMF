@@ -12,9 +12,9 @@
 #
 import os
 import sys
-import torchnmf
-
 sys.path.insert(0, os.path.abspath('../..'))
+
+import torchnmf
 
 # -- Project information -----------------------------------------------------
 
