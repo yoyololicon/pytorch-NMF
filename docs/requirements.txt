@@ -1,2 +1,4 @@
 tqdm
+numpy
+Cython
 torch==1.4.0
