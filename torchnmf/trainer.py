@@ -135,10 +135,10 @@ class SparsityProj(Optimizer):
         max_iter (int, optional): maximal number of function evaluations per optimization step. Default: ``10``.
     """
 
-    def __init__(self, params, sparsity, axis=1, max_iter=10):
+    def __init__(self, params, sparsity, dim=1, max_iter=10):
         if not 0.0 < sparsity < 1.:
             raise ValueError("Invalid sparsity value: {}".format(sparsity))
-        defaults = dict(sparsity=sparsity, lr=1, axis=axis, max_iter=max_iter)
+        defaults = dict(sparsity=sparsity, lr=1, dim=dim, max_iter=max_iter)
         super(SparsityProj, self).__init__(params, defaults)
 
     @torch.no_grad()
@@ -153,7 +153,7 @@ class SparsityProj(Optimizer):
         for group in self.param_groups:
             sparsity = group['sparsity']
             lr = group['lr']
-            axis = group['axis']
+            dim = group['dim']
             max_iter = group['max_iter']
 
             with torch.enable_grad():
@@ -164,12 +164,12 @@ class SparsityProj(Optimizer):
 
             for i in range(max_iter):
                 for p, g in params:
-                    norms = _get_norm(p, axis)
+                    norms = _get_norm(p, dim)
                     p.add_(g, alpha=-lr)
-                    dim = p.numel() // p.shape[axis]
+                    dim = p.numel() // p.shape[dim]
                     L1 = dim ** 0.5 * (1 - sparsity) + sparsity
-                    for j in range(p.shape[axis]):
-                        slicer = (slice(None),) * axis + (j,)
+                    for j in range(p.shape[dim]):
+                        slicer = (slice(None),) * dim + (j,)
                         p[slicer] = _proj_func(p[slicer], L1 * norms[j], norms[j] ** 2)
 
                 loss = closure()
