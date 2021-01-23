@@ -15,19 +15,19 @@ For :mod:`torchnmf.trainer.BetaMu`::
 
     for i in range(iterations):
         def closure():
-            optimizer.zero_grad()
+            trainer.zero_grad()
             return target, model()
-        optimizer.step(closure)
+        trainer.step(closure)
 
 For :mod:`torchnmf.trainer.SparsityProj`::
 
     for i in range(iterations):
         def closure():
-            optimizer.zero_grad()
+            trainer.zero_grad()
             output = model()
             loss = loss_fn(output, target)
             return loss
-        optimizer.step(closure)
+        trainer.step(closure)
 
 
 Algorithms
