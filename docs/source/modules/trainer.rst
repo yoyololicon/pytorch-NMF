@@ -1,7 +1,39 @@
 torchnmf.trainer
 ======================
-
 .. automodule:: torchnmf.trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
+
+:mod:`torchnmf.trainer` is a package implementing various parameter updating algorithms for NMF, and is based on
+the same optimizer interface from :mod:`torch.optim`.
+
+Taking an update step
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Because current available trainer reevaluate the function multiple times, a closure function is required in each step.
+The closure should clear the gradients, compute output (or even the loss), and return it.
+
+For :mod:`torchnmf.trainer.BetaMu`::
+
+    for i in range(iterations):
+        def closure():
+            optimizer.zero_grad()
+            return target, model()
+        optimizer.step(closure)
+
+For :mod:`torchnmf.trainer.SparsityProj`::
+
+    for i in range(iterations):
+        def closure():
+            optimizer.zero_grad()
+            output = model()
+            loss = loss_fn(output, target)
+            return loss
+        optimizer.step(closure)
+
+
+Algorithms
+----------
+
+.. autoclass:: BetaMu
+    :members:
+.. autoclass:: SparsityProj
+    :members:

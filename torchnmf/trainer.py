@@ -34,7 +34,7 @@ class BetaMu(Optimizer):
 
     @torch.no_grad()
     def step(self, closure):
-        """Performs a single optimization step.
+        """Performs a single update step.
 
         Arguments:
             closure (callable): A closure that reevaluates the model
@@ -55,7 +55,7 @@ class BetaMu(Optimizer):
             beta = group['beta']
             l1_reg = group['l1_reg']
             l2_reg = group['l2_reg']
-            ortho = group['sparsity']
+            ortho = group['orthogonal']
 
             if beta < 1:
                 gamma = 1 / (2 - beta)
@@ -130,7 +130,7 @@ class SparsityProj(Optimizer):
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
         sparsity (float): the target sparseness for `params`, with 0 < sparsity < 1.
-        dim (int, optional): dimension over which to compute the sparseness. Default: ``1``.
+        dim (int, optional): dimension over which to compute the sparseness for each parameter. Default: ``1``.
         max_iter (int, optional): maximal number of function evaluations per optimization step. Default: ``10``.
     """
 
@@ -142,7 +142,7 @@ class SparsityProj(Optimizer):
 
     @torch.no_grad()
     def step(self, closure):
-        """Performs a single optimization step.
+        """Performs a single update step.
 
         Arguments:
             closure (callable): A closure that reevaluates the model and returns the loss.
@@ -159,12 +159,12 @@ class SparsityProj(Optimizer):
                 init_loss = closure()
                 init_loss.backward()
 
-            params = [p for p in group['params'] if p.grad is not None]
+            params = [(p, p.grad.clone()) for p in group['params'] if p.grad is not None]
 
             for i in range(max_iter):
-                for p in params:
+                for p, g in params:
                     norms = _get_norm(p, axis)
-                    p.add_(p.grad, alpha=-lr)
+                    p.add_(g, alpha=-lr)
                     dim = p.numel() // p.shape[axis]
                     L1 = dim ** 0.5 * (1 - sparsity) + sparsity
                     for j in range(p.shape[axis]):
@@ -175,8 +175,8 @@ class SparsityProj(Optimizer):
                 if loss <= init_loss:
                     break
 
-                for p in params:
-                    p.add_(p.grad, alpha=lr)
+                for p, g in params:
+                    p.add_(g, alpha=lr)
                 lr *= 0.5
 
             lr *= 1.2
