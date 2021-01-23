@@ -38,7 +38,8 @@ class BetaMu(Optimizer):
 
         Arguments:
             closure (callable): A closure that reevaluates the model
-                and returns the target and predict Tensor.
+                and returns the target and predicted Tensor in the form:
+                ``func()->Tuple(target,predict)``.
         """
 
         # Make sure the closure is always called with grad enabled
