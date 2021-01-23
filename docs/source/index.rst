@@ -20,6 +20,7 @@ Welcome to torchnmf's documentation!
 
    modules/nmf
    modules/metrics
+   modules/trainer
 
 
 Indices and tables

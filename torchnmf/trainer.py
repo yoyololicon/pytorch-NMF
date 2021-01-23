@@ -2,18 +2,33 @@ import torch
 from torch.optim.optimizer import Optimizer
 from .nmf import _proj_func, _get_norm
 
-
 eps = 1e-8
 
 
 class BetaMu(Optimizer):
-    def __init__(self, params, beta=1, l1_reg=0, l2_reg=0, sparsity=None, orthogonal=None):
+    r"""Implements the classic multiplicative updater for NMF models minimizing β-divergence.
+
+    Note:
+        To use this optimizer, not only make sure your model parameters are non-negative, but the gradients
+        along the whole computational graph are always non-negative.
+
+    Arguments:
+        params (iterable): iterable of parameters to optimize or dicts defining
+            parameter groups
+        beta (float, optional): beta divergence to be minimized, measuring the distance between target and the NMF model.
+                        Default: ``1.``.
+        l1_reg (float, optional): L1 regularize penalty. Default: ``0.``.
+        l2_reg (float, optional): L2 regularize penalty (weight decay). Default: ``0.``.
+        orthogonal (float, optional): Orthogonal regularize penalty. Default: ``0.``.
+    """
+
+    def __init__(self, params, beta=1, l1_reg=0, l2_reg=0, orthogonal=0):
         if not 0.0 <= l1_reg:
             raise ValueError("Invalid l1_reg value: {}".format(l1_reg))
         if not 0.0 <= l2_reg:
             raise ValueError("Invalid l2_reg value: {}".format(l2_reg))
-        if sparsity is not None and not 0.0 < sparsity < 1.:
-            raise ValueError("Invalid sparsity value: {}".format(sparsity))
+        if not 0.0 <= orthogonal:
+            raise ValueError("Invalid orthogonal value: {}".format(orthogonal))
         defaults = dict(beta=beta, l1_reg=l1_reg, l2_reg=l2_reg, orthogonal=orthogonal)
         super(BetaMu, self).__init__(params, defaults)
 
@@ -104,6 +119,21 @@ class BetaMu(Optimizer):
 
 
 class SparsityProj(Optimizer):
+    r"""Implements parseness constrainted gradient projection method described in `Non-negative Matrix Factorization
+    with Sparseness Constraints`_.
+
+    .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
+            https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
+
+
+    Arguments:
+        params (iterable): iterable of parameters to optimize or dicts defining
+            parameter groups
+        sparsity (float): the target sparseness for `params`, with 0 < sparsity < 1.
+        dim (int, optional): dimension over which to compute the sparseness. Default: ``1``.
+        max_iter (int, optional): maximal number of function evaluations per optimization step. Default: ``10``.
+    """
+
     def __init__(self, params, sparsity, axis=1, max_iter=10):
         if not 0.0 < sparsity < 1.:
             raise ValueError("Invalid sparsity value: {}".format(sparsity))
@@ -112,6 +142,11 @@ class SparsityProj(Optimizer):
 
     @torch.no_grad()
     def step(self, closure):
+        """Performs a single optimization step.
+
+        Arguments:
+            closure (callable): A closure that reevaluates the model and returns the loss.
+        """
         loss = None
 
         for group in self.param_groups:
