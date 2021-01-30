@@ -89,10 +89,10 @@ class BetaMu(Optimizer):
                     output_pos = WH.pow(beta - 1)
                 # first backward
                 WH.backward(output_neg, retain_graph=True)
-                neg = torch.clone(p.grad).detach()
+                neg = torch.clone(p.grad).relu_()
                 p.grad.zero_()
                 WH.backward(output_pos)
-                pos = torch.clone(p.grad).detach()
+                pos = torch.clone(p.grad).relu_()
                 p.grad.add_(-neg)
 
                 if l1_reg > 0:

@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from torchnmf.deep import NMF as torchNMF
+from torchnmf.nmf import NMF as torchNMF
 
 from sklearn.decomposition import NMF
 from time import time
@@ -27,6 +27,7 @@ if __name__ == '__main__':
     tchcuda = []
 
     Snumpy = S.numpy()
+    S = S.t()
     Scuda = S.cuda()
 
     net = torchNMF(S.shape, rank=R)
@@ -61,6 +62,6 @@ if __name__ == '__main__':
     plt.ylabel("Time per Iteration (s)")
     plt.yscale('log')
     plt.legend()
-    plt.title('Runtime Benchmark, target matrix size is %d x %d, %d components' % (S.shape[0], S.shape[1], R))
+    plt.title('Runtime Benchmark, target matrix size is %d x %d, %d components' % (S.shape[1], S.shape[0], R))
     plt.xticks(betas, [str(i) for i in betas])
     plt.show()

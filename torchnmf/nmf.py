@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch.nn.modules.utils import _single, _pair, _triple
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
-from .base import Base
 from .metrics import beta_div
 from tqdm import tqdm
 
@@ -17,6 +16,7 @@ __all__ = [
     'BaseComponent', 'NMF', 'NMFD', 'NMF2D', 'NMF3D'
 ]
 
+eps = 1e-8
 
 def _proj_func(s: Tensor,
                k1: float,
@@ -67,18 +67,18 @@ def _double_backward_update(V: Tensor,
         output_pos = WH.pow(beta - 1)
     # first backward
     WH.backward(output_neg, retain_graph=pos is None)
-    neg = torch.clone(param.grad).detach()
+    neg = torch.clone(param.grad).relu_().add_(eps)
 
     if pos is None:
         param.grad.zero_()
         WH.backward(output_pos)
-        pos = torch.clone(param.grad).detach()
+        pos = torch.clone(param.grad).relu_().add_(eps)
 
     if l1_reg > 0:
-        pos += l1_reg
+        pos.add_(l1_reg)
     if l2_reg > 0:
-        pos += param.data * l2_reg
-    multiplier = neg / (pos + 1e-8)
+        pos.add_(param.data, alpha=l2_reg)
+    multiplier = neg / pos
     if gamma != 1:
         multiplier.pow_(gamma)
     param.data.mul_(multiplier)
@@ -548,7 +548,7 @@ class NMFD(BaseComponent):
                  T: _size_1_t = 1,
                  **kwargs):
         if isinstance(Vshape, Iterabc):
-            T = _single(T)
+            T, = _single(T)
             batch, K, M = Vshape
             rank = rank if rank else K
             kwargs['W'] = (K, rank, T)
