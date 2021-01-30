@@ -6,7 +6,7 @@ torchnmf.trainer
 the same optimizer interface from :mod:`torch.optim`.
 
 Taking an update step
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
 Because current available trainer reevaluate the function multiple times, a closure function is required in each step.
 The closure should clear the gradients, compute output (or even the loss), and return it.

@@ -12,6 +12,7 @@ Welcome to torchnmf's documentation!
    :caption: Notes
 
    notes/installation
+   notes/intro
 
 .. toctree::
    :glob:
