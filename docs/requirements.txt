@@ -1,0 +1,5 @@
+tqdm
+numpy
+Cython
+torch==1.4.0
+git+git://github.com/pytorch/pytorch_sphinx_theme@master#egg=pytorch_sphinx_theme
