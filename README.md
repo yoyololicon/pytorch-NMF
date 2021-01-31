@@ -1,6 +1,7 @@
 # Non-negative Matrix Fatorization in PyTorch
 
 [![Documentation Status](https://readthedocs.org/projects/pytorch-nmf/badge/?version=latest)](https://pytorch-nmf.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://badge.fury.io/py/torchnmf.svg)](https://badge.fury.io/py/torchnmf)
 
 PyTorch is not only a good deep learning framework, but also a fast tool when it comes to matrix operations and convolutions on large data.
 A great example is [PyTorchWavelets](http://github.com/tomrunia/PyTorchWavelets).
