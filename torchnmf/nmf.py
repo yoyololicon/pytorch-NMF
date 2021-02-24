@@ -377,7 +377,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         W.grad = None
                         WH = self.reconstruct(H.detach(), W)
-                        loss = beta_div(self.fix_neg(WH), V, beta)
+                        loss = beta_div(WH, V, beta)
                         loss.backward()
                         with torch.no_grad():
                             for i in range(10):
@@ -385,7 +385,7 @@ class BaseComponent(torch.nn.Module):
                                 norms = _get_norm(Wnew)
                                 for j in range(Wnew.shape[1]):
                                     Wnew[:, j] = _proj_func(Wnew[:, j], L1a * norms[j], norms[j] ** 2)
-                                new_loss = beta_div(self.fix_neg(self.reconstruct(self.H, Wnew)),
+                                new_loss = beta_div(self.reconstruct(self.H, Wnew),
                                                     V, beta)
                                 if new_loss <= loss:
                                     break
@@ -403,7 +403,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         H.grad = None
                         WH = self.reconstruct(H, W.detach())
-                        loss = beta_div(self.fix_neg(WH), V, beta)
+                        loss = beta_div(WH, V, beta)
                         loss.backward()
 
                         with torch.no_grad():
@@ -412,7 +412,7 @@ class BaseComponent(torch.nn.Module):
                                 norms = _get_norm(Hnew)
                                 for j in range(H.shape[1]):
                                     Hnew[:, j] = _proj_func(Hnew[:, j], L1s * norms[j], norms[j] ** 2)
-                                new_loss = beta_div(self.fix_neg(self.reconstruct(Hnew, W)),
+                                new_loss = beta_div(self.reconstruct(Hnew, W),
                                                     V, beta)
                                 if new_loss <= loss:
                                     break
