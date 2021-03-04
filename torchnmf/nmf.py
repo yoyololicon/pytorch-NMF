@@ -405,6 +405,7 @@ class BaseComponent(torch.nn.Module):
                         WH = self.reconstruct(H, W.detach())
                         _double_backward_update(V, WH, H, beta, gamma, 0, 0,
                                                 _get_H_kl_positive(W.detach()) if beta == 1 else None)
+                        _renorm(W, H, 'H')
                     else:
                         H.grad = None
                         WH = self.reconstruct(H, W.detach())
@@ -427,7 +428,6 @@ class BaseComponent(torch.nn.Module):
 
                             stepsize_H *= 1.2
                             H.copy_(Hnew)
-                    _renorm(W, H, 'H')
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
