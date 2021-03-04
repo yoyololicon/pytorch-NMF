@@ -18,6 +18,7 @@ __all__ = [
 
 eps = 1e-8
 
+
 def _proj_func(s: Tensor,
                k1: float,
                k2: float) -> Tensor:
@@ -109,13 +110,13 @@ def _renorm(W: Tensor,
             H: Tensor,
             unit_norm='W'):
     if unit_norm == 'W':
-        W_norm = BaseComponent.get_W_norm(W)
+        W_norm = _get_norm(W)
         slicer = (slice(None),) + (None,) * (W.dim() - 2)
         W /= W_norm[slicer]
         slicer = (slice(None),) + (None,) * (H.dim() - 2)
         H *= W_norm[slicer]
     elif unit_norm == 'H':
-        H_norm = BaseComponent.get_H_norm(H)
+        H_norm = _get_norm(H)
         slicer = (slice(None),) + (None,) * (H.dim() - 2)
         H /= H_norm[slicer]
         slicer = (slice(None),) + (None,) * (W.dim() - 2)
@@ -165,7 +166,8 @@ class BaseComponent(torch.nn.Module):
         super().__init__()
 
         if isinstance(W, Tensor):
-            self.register_parameter('W', Parameter(torch.empty(*W.size()), requires_grad=trainable_W))
+            self.register_parameter('W', Parameter(
+                torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
         elif isinstance(W, Iterabc) and trainable_W:
             self.register_parameter('W', Parameter(torch.randn(*W).abs()))
@@ -174,7 +176,8 @@ class BaseComponent(torch.nn.Module):
 
         if isinstance(H, Tensor):
             H_shape = H.shape
-            self.register_parameter('H', Parameter(torch.empty(*H_shape), requires_grad=trainable_H))
+            self.register_parameter('H', Parameter(
+                torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
         elif isinstance(H, Iterabc) and trainable_H:
             self.register_parameter('H', Parameter(torch.randn(*H).abs()))
@@ -281,7 +284,8 @@ class BaseComponent(torch.nn.Module):
 
         with torch.no_grad():
             WH = self.reconstruct(H, W)
-            loss_init = previous_loss = beta_div(WH, V, beta).mul(2).sqrt().item()
+            loss_init = previous_loss = beta_div(
+                WH, V, beta).mul(2).sqrt().item()
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
@@ -384,7 +388,8 @@ class BaseComponent(torch.nn.Module):
                                 Wnew = W - stepsize_W * W.grad
                                 norms = _get_norm(Wnew)
                                 for j in range(Wnew.shape[1]):
-                                    Wnew[:, j] = _proj_func(Wnew[:, j], L1a * norms[j], norms[j] ** 2)
+                                    Wnew[:, j] = _proj_func(
+                                        Wnew[:, j], L1a * norms[j], norms[j] ** 2)
                                 new_loss = beta_div(self.reconstruct(self.H, Wnew),
                                                     V, beta)
                                 if new_loss <= loss:
@@ -411,7 +416,8 @@ class BaseComponent(torch.nn.Module):
                                 Hnew = H - stepsize_H * H.grad
                                 norms = _get_norm(Hnew)
                                 for j in range(H.shape[1]):
-                                    Hnew[:, j] = _proj_func(Hnew[:, j], L1s * norms[j], norms[j] ** 2)
+                                    Hnew[:, j] = _proj_func(
+                                        Hnew[:, j], L1s * norms[j], norms[j] ** 2)
                                 new_loss = beta_div(self.reconstruct(Hnew, W),
                                                     V, beta)
                                 if new_loss <= loss:
@@ -421,8 +427,7 @@ class BaseComponent(torch.nn.Module):
 
                             stepsize_H *= 1.2
                             H.copy_(Hnew)
-
-                        _renorm(W, H, 'W')
+                    _renorm(W, H, 'H')
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
