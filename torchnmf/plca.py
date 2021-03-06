@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from .base import Base
 from .utils import normalize
+from .nmf import _get_H_kl_positive, _get_W_kl_positive
 from tqdm import tqdm
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
@@ -13,6 +14,8 @@ __all__ = [
     'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
 ]
 
+eps = 1e-8
+
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
     return V.view(-1) @ WZH.log().view(-1) + W.log().sum().mul(W_alpha - 1) + H.log().sum().mul(
@@ -20,15 +23,29 @@ def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
 
 
 @torch.no_grad()
-def _renorm(x: Tensor, batched=False):
+def renorm(x: Tensor, batched=False):
     if x.ndim > 1:
         sum_dims = list(range(x.dim()))
         sum_dims.remove(1)
         if batched and x.ndim > 2:
             sum_dims.remove(0)
-        x.div_(x.sum(sum_dims, keepdim=True))
+        norm = x.sum(sum_dims, keepdim=True)
     else:
-        x.div_(x.sum())
+        norm = x.sum()
+    return x / norm, norm
+
+
+def _double_backward_update(V: Tensor,
+                            WZH: Tensor,
+                            param: Parameter,
+                            pos: Tensor = None,
+                            retain_graph=False):
+    param.grad = None
+    # first backward
+    WH.backward(V / WZH, retain_graph=retain_graph)
+    neg = torch.clone(param.grad).relu_().add_(eps)
+    multiplier = neg / pos
+    param.data.mul_(multiplier)
 
 
 class BaseComponent(torch.nn.Module):
@@ -87,7 +104,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('W', None)
 
         if hasattr(self, "W"):
-            _renorm(self.W)
+            self.W.data.copy_(renorm(self.W)[0])
             infer_rank = self.W.shape[1]
 
         if isinstance(H, Tensor):
@@ -102,7 +119,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('H', None)
 
         if hasattr(self, "H"):
-            _renorm(self.H, True)
+            self.H.data.copy_(renorm(self.H, True)[0])
             infer_rank = self.H.shape[1]
 
         if isinstance(Z, Tensor):
@@ -118,7 +135,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('Z', None)
 
         if hasattr(self, "Z"):
-            _renorm(self.Z)
+            self.Z.data.copy_(renorm(self.Z)[0])
             infer_rank = self.Z.shape[0]
 
         if infer_rank is None:
@@ -134,7 +151,15 @@ class BaseComponent(torch.nn.Module):
 
         self.rank = rank
 
-    def forward(self, H=None, W=None, Z=None):
+    def extra_repr(self) -> str:
+        s = ('{rank}')
+        if self.W is not None:
+            s += ', out_channels={out_channels}'
+            if hasattr(self, 'kernel_size'):
+                s += ', kernel_size={kernel_size}'
+        return s.format(**self.__dict__)
+
+    def forward(self, H: Tensor = None, W: Tensor = None, Z: Tensor = None) -> Tensor:
         if H is None:
             H = self.H
         if W is None:
@@ -143,67 +168,70 @@ class BaseComponent(torch.nn.Module):
             Z = self.Z
         return self.reconstruct(W, Z, H)
 
-    def reconstruct(self, W, Z, H):
+    @staticmethod
+    def reconstruct(H: Tensor, W: Tensor, Z: Tensor) -> Tensor:
+        r"""Defines the computation performed at every call.
+
+            Should be overridden by all subclasses.
+            """
         raise NotImplementedError
 
     def fit(self,
-            V,
-            W=None,
-            Z=None,
-            H=None,
-            update_W=True,
-            update_Z=True,
-            update_H=True,
-            tol=1e-6,
-            max_iter=40,
-            verbose=1,
-            W_alpha=1,
-            Z_alpha=1,
-            H_alpha=1,
-            ):
+            V: Tensor,
+            tol: float = 1e-4,
+            max_iter: int = 200,
+            verbose: bool = False,
+            W_alpha: float = 1,
+            Z_alpha: float = 1,
+            H_alpha: float = 1):
 
-        norm = V.sum()
-        V = V / norm
+        W = self.W
+        H = self.H
+        Z = self.Z
 
-        if W is not None:
-            self.W.data.copy_(W)
+        V, norm = renorm(V)
 
-        if H is not None:
-            self.H.data.copy_(H)
-
-        if Z is not None:
-            self.Z.data.copy_(Z)
+        with torch.no_grad():
+            WZH = self.reconstruct(H, W, Z)
+            loss_init = previous_loss = kl_div(WZH, V).mul(2).sqrt().item()
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
-                WZH = self.reconstruct(self.W, self.Z, self.H)
+                self.zero_grad()
+                WZH = self.reconstruct(H, W, Z)
+                WZH.backward(V / WZH)
 
-                log_prob = _log_probability(
-                    V, WZH, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
-                loss = kl_div(WZH, V).item()
+                H_sum = None
+                if H.requires_grad or Z.requires_grad:
+                    multiplier = H.grad.relu()
+                    updated_H = H.detach() * multiplier
+                    updated_H, norm = renorm(updated_H)[1]
 
-                self.update_params(V / WZH, update_W, update_H,
-                                   update_Z, W_alpha, Z_alpha, H_alpha)
+                    if Z.requires_grad:
+                        Z.data.copy_(norm.squeeze() / norm.sum())
+                    if H.requires_grad:
+                        H.data.copy_(updated_H)
+                        H_sum = norm
 
-                pbar.set_postfix(Log_likelihood=log_prob, kl_div=loss)
-                # pbar.set_description('Log likelihood=%.4f' % log_prob)
-                pbar.update()
+                if W.requires_grad:
+                    multiplier = W.grad.relu()
+                    if H_sum is not None:
+                        multiplier.div_(H_sum.add(eps))
+                    W.data.copy_(renorm(W * multiplier)[0])
 
-                if not n_iter:
-                    loss_init = loss
-                elif (previous_loss - loss) / loss_init < tol:
-                    break
-                previous_loss = loss
+                if n_iter % 10 == 9:
+                    with torch.no_grad():
+                        WZH = self.reconstruct(H, W, Z)
+                        loss = kl_div(WZH, V).mul(2).sqrt().item()
+                        log_pro = _log_probability(
+                            V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha).item()
+                    pbar.set_postfix(loss=loss, log_likelihood=log_pro)
+                    pbar.update(10)
+                    if (previous_loss - loss) / loss_init < tol:
+                        break
+                    previous_loss = loss
 
         return n_iter, norm
-
-    def fit_transform(self, *args, **kwargs):
-        n_iter, norm = self.fit(*args, **kwargs)
-        return n_iter, self.forward() * norm, norm
-
-    def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, bool, bool, bool, float, float, float) -> None
-        raise NotImplementedError
 
 
 class PLCA(_PLCA):
