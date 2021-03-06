@@ -1,9 +1,12 @@
 import torch
+from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter
 from .base import Base
 from .utils import normalize
 from tqdm import tqdm
+from typing import Union, Iterable, Optional, List, Tuple
+from collections.abc import Iterable as Iterabc
 from .metrics import kl_div
 
 __all__ = [
@@ -12,22 +15,124 @@ __all__ = [
 
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, float, float, float) -> Tensor
     return V.view(-1) @ WZH.log().view(-1) + W.log().sum().mul(W_alpha - 1) + H.log().sum().mul(
         H_alpha - 1) + Z.log().sum().mul(Z_alpha - 1)
 
 
-class _PLCA(Base):
-    def __init__(self, W_size, Z_size, H_size, W_norm_dim, H_norm_dim, uniform):
-        super().__init__()
-        self.rank = Z_size
-        self.W = Parameter(normalize(torch.rand(*W_size), W_norm_dim), requires_grad=False)
-        self.H = Parameter(normalize(torch.rand(*H_size), H_norm_dim), requires_grad=False)
-        self.Z = Parameter(normalize(torch.rand(self.rank)), requires_grad=False)
+@torch.no_grad()
+def _renorm(x: Tensor, batched=False):
+    if x.ndim > 1:
+        sum_dims = list(range(x.dim()))
+        sum_dims.remove(1)
+        if batched and x.ndim > 2:
+            sum_dims.remove(0)
+        x.div_(x.sum(sum_dims, keepdim=True))
+    else:
+        x.div_(x.sum())
 
-        if uniform:
-            self.H.data.copy_(normalize(torch.ones(*H_size), H_norm_dim))
-            self.Z.data.fill_(1 / self.rank)
+
+class BaseComponent(torch.nn.Module):
+    r"""Base class for all NMF modules.
+
+    You can't use this module directly.
+    Your models should also subclass this class.
+
+    Args:
+        rank (int): Size of hidden dimension
+        W (tuple or Tensor): Size or initial weights of template tensor W
+        H (tuple or Tensor): Size or initial weights of activation tensor H
+        trainable_W (bool):  If ``True``, the template tensor W is learnable. Default: ``True``
+        trainable_H (bool):  If ``True``, the activation tensor H is learnable. Default: ``True``
+
+    Attributes:
+        W (Tensor or None): the template tensor of the module if corresponding argument is given.
+            The values are initialized non-negatively.
+        H (Tensor or None): the activation tensor of the module if corresponding argument is given.
+            The values are initialized non-negatively.
+
+       """
+    __constants__ = ['rank']
+    __annotations__ = {'W': Optional[Tensor],
+                       'H': Optional[Tensor],
+                       'Z': Optional[Tensor],
+                       'out_channels': Optional[int],
+                       'kernel_size': Optional[Tuple[int, ...]]}
+
+    rank: int
+    W: Optional[Tensor]
+    H: Optional[Tensor]
+    Z: Optional[Tensor]
+    out_channels: Optional[int]
+    kernel_size: Optional[Tuple[int, ...]]
+
+    def __init__(self,
+                 rank: int = None,
+                 W: Union[Iterable[int], Tensor] = None,
+                 H: Union[Iterable[int], Tensor] = None,
+                 Z: Tensor = None,
+                 trainable_W: bool = True,
+                 trainable_H: bool = True,
+                 trainable_Z: bool = True):
+        super().__init__()
+
+        infer_rank = None
+        if isinstance(W, Tensor):
+            assert torch.all(W >= 0.), "Tensor W should be non-negative."
+            self.register_parameter('W', Parameter(
+                torch.empty(*W.size()), requires_grad=trainable_W))
+            self.W.data.copy_(W)
+        elif isinstance(W, Iterabc) and trainable_W:
+            self.register_parameter('W', Parameter(torch.randn(*W).abs()))
+        else:
+            self.register_parameter('W', None)
+
+        if hasattr(self, "W"):
+            _renorm(self.W)
+            infer_rank = self.W.shape[1]
+
+        if isinstance(H, Tensor):
+            assert torch.all(H >= 0.), "Tensor H should be non-negative."
+            H_shape = H.shape
+            self.register_parameter('H', Parameter(
+                torch.empty(*H_shape), requires_grad=trainable_H))
+            self.H.data.copy_(H)
+        elif isinstance(H, Iterabc) and trainable_H:
+            self.register_parameter('H', Parameter(torch.randn(*H).abs()))
+        else:
+            self.register_parameter('H', None)
+
+        if hasattr(self, "H"):
+            _renorm(self.H, True)
+            infer_rank = self.H.shape[1]
+
+        if isinstance(Z, Tensor):
+            assert Z.ndim == 1, "Z should be one dimensional."
+            assert torch.all(Z >= 0.), "Tensor Z should be non-negative."
+            rank = Z.numel()
+            self.register_parameter('Z', Parameter(
+                torch.empty(rank), requires_grad=trainable_Z))
+            self.Z.data.copy_(Z)
+        elif isinstance(rank, int):
+            self.register_parameter('Z', Parameter(torch.ones(rank) / rank))
+        else:
+            self.register_parameter('Z', None)
+
+        if hasattr(self, "Z"):
+            _renorm(self.Z)
+            infer_rank = self.Z.shape[0]
+
+        if infer_rank is None:
+            assert rank, "A rank should be given when W, H and Z are not available!"
+        else:
+            if hasattr(self, "Z"):
+                assert self.Z.shape[0] == infer_rank, "Latent size Z does not match with others!"
+            if hasattr(self, "H"):
+                assert self.H.shape[1] == infer_rank, "Latent size H does not match with others!"
+            if hasattr(self, "W"):
+                assert self.W.shape[1] == infer_rank, "Latent size W does not match with others!"
+            rank = infer_rank
+
+        self.rank = rank
 
     def forward(self, H=None, W=None, Z=None):
         if H is None:
@@ -73,10 +178,12 @@ class _PLCA(Base):
             for n_iter in range(max_iter):
                 WZH = self.reconstruct(self.W, self.Z, self.H)
 
-                log_prob = _log_probability(V, WZH, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
+                log_prob = _log_probability(
+                    V, WZH, self.W, self.Z, self.H, W_alpha, Z_alpha, H_alpha).item()
                 loss = kl_div(WZH, V).item()
 
-                self.update_params(V / WZH, update_W, update_H, update_Z, W_alpha, Z_alpha, H_alpha)
+                self.update_params(V / WZH, update_W, update_H,
+                                   update_Z, W_alpha, Z_alpha, H_alpha)
 
                 pbar.set_postfix(Log_likelihood=log_prob, kl_div=loss)
                 # pbar.set_description('Log likelihood=%.4f' % log_prob)
@@ -116,7 +223,8 @@ class PLCA(_PLCA):
             new_W = VdivWZH @ self.H.t() * self.W * self.Z
 
         if update_H:
-            H = self.fix_neg(self.W.mul(self.Z).t() @ VdivWZH * self.H + H_alpha - 1)
+            H = self.fix_neg(self.W.mul(self.Z).t() @
+                             VdivWZH * self.H + H_alpha - 1)
             self.H[:] = normalize(H, 1)
 
         if update_W:
@@ -153,10 +261,12 @@ class SIPLCA(_PLCA):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
 
         if update_W or update_Z:
-            new_W = F.conv1d(VdivWZH[:, None], self.H[:, None] * self.Z[:, None, None]) * self.W
+            new_W = F.conv1d(VdivWZH[:, None], self.H[:, None]
+                             * self.Z[:, None, None]) * self.W
 
         if update_H:
-            new_H = F.conv1d(VdivWZH[None, ...], torch.transpose(self.W * self.Z[:, None], 0, 1))[0] * self.H
+            new_H = F.conv1d(VdivWZH[None, ...], torch.transpose(
+                self.W * self.Z[:, None], 0, 1))[0] * self.H
             new_H = normalize(self.fix_neg(new_H + H_alpha - 1), 1)
             self.H[:] = new_H
 
@@ -199,7 +309,8 @@ class SIPLCA2(_PLCA):
         super().__init__(W_size, rank, H_size, W_norm_dim, H_norm_dim, uniform)
 
     def reconstruct(self, W, Z, H):
-        out = F.conv2d(H[None, ...], W.mul(Z[:, None, None]).flip((2, 3)), padding=self.pad_size)[0]
+        out = F.conv2d(H[None, ...], W.mul(Z[:, None, None]).flip(
+            (2, 3)), padding=self.pad_size)[0]
         if self.channel == 1:
             return out[0]
         return out
@@ -208,10 +319,12 @@ class SIPLCA2(_PLCA):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
         VdivWZH = VdivWZH.view(self.channel, 1, self.K, self.M)
         if update_W or update_Z:
-            new_W = F.conv2d(VdivWZH, self.H.mul(self.Z[:, None, None])[:, None]) * self.W
+            new_W = F.conv2d(VdivWZH, self.H.mul(
+                self.Z[:, None, None])[:, None]) * self.W
 
         if update_H:
-            new_H = F.conv2d(VdivWZH.transpose(0, 1), torch.transpose(self.W * self.Z[:, None, None], 0, 1))[0] * self.H
+            new_H = F.conv2d(VdivWZH.transpose(0, 1), torch.transpose(
+                self.W * self.Z[:, None, None], 0, 1))[0] * self.H
             new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2))
             self.H[:] = new_H
 
@@ -249,7 +362,8 @@ class SIPLCA3(_PLCA):
         super().__init__(W_size, rank, H_size, W_norm_dim, H_norm_dim, uniform)
 
     def reconstruct(self, W, Z, H):
-        out = F.conv3d(H[None, ...], W.mul(Z[:, None, None, None]).flip((2, 3, 4)), padding=self.pad_size)[0]
+        out = F.conv3d(H[None, ...], W.mul(Z[:, None, None, None]).flip(
+            (2, 3, 4)), padding=self.pad_size)[0]
         if self.channel == 1:
             return out[0]
         return out
@@ -258,16 +372,18 @@ class SIPLCA3(_PLCA):
         # type: (Tensor, bool, bool, bool, float, float, float) -> None
         VdivWZH = VdivWZH.view(self.channel, 1, self.N, self.K, self.M)
         if update_W or update_Z:
-            new_W = F.conv3d(VdivWZH, self.H.mul(self.Z[:, None, None, None])[:, None], padding=self.pad_size) * self.W
+            new_W = F.conv3d(VdivWZH, self.H.mul(self.Z[:, None, None, None])[
+                             :, None], padding=self.pad_size) * self.W
 
         if update_H:
             new_H = F.conv3d(VdivWZH.transpose(0, 1), torch.transpose(self.W * self.Z[:, None, None, None], 0, 1))[
-                        0] * self.H
+                0] * self.H
             new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2, 3))
             self.H[:] = new_H
 
         if update_W:
-            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3, 4))
+            self.W[:] = normalize(self.fix_neg(
+                new_W + W_alpha - 1), (0, 2, 3, 4))
 
         if update_Z:
             Z = normalize(self.fix_neg(new_W.sum((0, 2, 3, 4)) + Z_alpha - 1))
