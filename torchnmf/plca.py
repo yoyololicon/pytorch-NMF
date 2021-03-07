@@ -23,16 +23,14 @@ def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
 
 
 @torch.no_grad()
-def renorm(x: Tensor, batched=False):
+def get_norm(x: Tensor):
     if x.ndim > 1:
         sum_dims = list(range(x.dim()))
         sum_dims.remove(1)
-        if batched and x.ndim > 2:
-            sum_dims.remove(0)
         norm = x.sum(sum_dims, keepdim=True)
     else:
         norm = x.sum()
-    return x / norm, norm
+    return norm
 
 
 def _double_backward_update(V: Tensor,
@@ -104,7 +102,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('W', None)
 
         if hasattr(self, "W"):
-            self.W.data.copy_(renorm(self.W)[0])
+            self.W.data.div_(get_norm(self.W))
             infer_rank = self.W.shape[1]
 
         if isinstance(H, Tensor):
@@ -119,7 +117,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('H', None)
 
         if hasattr(self, "H"):
-            self.H.data.copy_(renorm(self.H, True)[0])
+            self.H.data.div_(get_norm(self.H))
             infer_rank = self.H.shape[1]
 
         if isinstance(Z, Tensor):
@@ -135,7 +133,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('Z', None)
 
         if hasattr(self, "Z"):
-            self.Z.data.copy_(renorm(self.Z)[0])
+            self.Z.data.div_(get_norm(self.Z))
             infer_rank = self.Z.shape[0]
 
         if infer_rank is None:
@@ -189,7 +187,8 @@ class BaseComponent(torch.nn.Module):
         H = self.H
         Z = self.Z
 
-        V, norm = renorm(V)
+        norm = get_norm(V)
+        V = V / norm
 
         with torch.no_grad():
             WZH = self.reconstruct(H, W, Z)
@@ -199,25 +198,32 @@ class BaseComponent(torch.nn.Module):
             for n_iter in range(max_iter):
                 self.zero_grad()
                 WZH = self.reconstruct(H, W, Z)
-                WZH.backward(V / WZH)
+                WZH.backward(V / WZH.add(eps))
 
-                H_sum = None
-                if H.requires_grad or Z.requires_grad:
-                    multiplier = H.grad.relu()
-                    updated_H = H.detach() * multiplier
-                    updated_H, norm = renorm(updated_H)[1]
-
-                    if Z.requires_grad:
-                        Z.data.copy_(norm.squeeze() / norm.sum())
-                    if H.requires_grad:
-                        H.data.copy_(updated_H)
-                        H_sum = norm
+                if Z.requires_grad:
+                    Z.data.mul_(Z.grad.relu())
 
                 if W.requires_grad:
-                    multiplier = W.grad.relu()
-                    if H_sum is not None:
-                        multiplier.div_(H_sum.add(eps))
-                    W.data.copy_(renorm(W * multiplier)[0])
+                    W.data.mul_(W.grad.relu())
+                    W.data.div_(Z if Z.requires_grad else get_norm(W))
+
+                if H.requires_grad:
+                    H.data.mul_(H.grad.relu())
+                    H.data.div_(Z if Z.requires_grad else get_norm(W))
+
+                if Z_alpha != 1:
+                    Z.data.add_(Z_alpha - 1).relu_()
+                if W_alpha != 1:
+                    W.data.add_(W_alpha - 1).relu_()
+                if H_alpha != 1:
+                    H.data.add_(H_alpha - 1).relu_()
+
+                if Z.requires_grad:
+                    Z.data.div_(get_norm(Z))
+                if W.requires_grad:
+                    W.data.div_(get_norm(W))
+                if H.requires_grad:
+                    H.data.div_(get_norm(H))
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
