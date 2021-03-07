@@ -29,7 +29,8 @@ class BetaMu(Optimizer):
             raise ValueError("Invalid l2_reg value: {}".format(l2_reg))
         if not 0.0 <= orthogonal:
             raise ValueError("Invalid orthogonal value: {}".format(orthogonal))
-        defaults = dict(beta=beta, l1_reg=l1_reg, l2_reg=l2_reg, orthogonal=orthogonal)
+        defaults = dict(beta=beta, l1_reg=l1_reg,
+                        l2_reg=l2_reg, orthogonal=orthogonal)
         super(BetaMu, self).__init__(params, defaults)
 
     @torch.no_grad()
@@ -79,11 +80,11 @@ class BetaMu(Optimizer):
                     output_neg = V
                     output_pos = WH
                 elif beta == 1:
-                    output_neg = V / WH
+                    output_neg = V / WH.add(eps)
                     output_pos = torch.ones_like(WH)
                 elif beta == 0:
-                    output_neg = V / (WH * WH)
-                    output_pos = 1 / WH
+                    output_neg = V / (WH * WH).add(eps)
+                    output_pos = 1 / WH.add(eps)
                 else:
                     output_neg = WH.pow(beta - 2) * V
                     output_pos = WH.pow(beta - 1)
@@ -160,7 +161,8 @@ class SparsityProj(Optimizer):
                 init_loss = closure()
                 init_loss.backward()
 
-            params = [(p, p.grad.clone()) for p in group['params'] if p.grad is not None]
+            params = [(p, p.grad.clone())
+                      for p in group['params'] if p.grad is not None]
 
             for i in range(max_iter):
                 for p, g in params:
@@ -170,7 +172,8 @@ class SparsityProj(Optimizer):
                     L1 = dim ** 0.5 * (1 - sparsity) + sparsity
                     for j in range(p.shape[dim]):
                         slicer = (slice(None),) * dim + (j,)
-                        p[slicer] = _proj_func(p[slicer], L1 * norms[j], norms[j] ** 2)
+                        p[slicer] = _proj_func(
+                            p[slicer], L1 * norms[j], norms[j] ** 2)
 
                 loss = closure()
                 if loss <= init_loss:

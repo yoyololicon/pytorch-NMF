@@ -61,8 +61,11 @@ def _double_backward_update(V: Tensor,
         output_neg = V
         output_pos = WH
     elif beta == 1:
-        output_neg = V / WH
+        output_neg = V / WH.add(eps)
         output_pos = None
+    elif beta == 0:
+        output_neg = V / (WH * WH).add(eps)
+        output_pos = 1 / WH.add(eps)
     else:
         output_neg = WH.pow(beta - 2) * V
         output_pos = WH.pow(beta - 1)
