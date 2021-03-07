@@ -2,7 +2,6 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter
-from .base import Base
 from .utils import normalize
 from .nmf import _size_1_t, _size_2_t, _size_3_t
 from torch.nn.modules.utils import _single, _pair, _triple
