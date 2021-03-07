@@ -174,7 +174,7 @@ class BaseComponent(torch.nn.Module):
             Z_alpha: float = 1,
             H_alpha: float = 1):
 
-        assert torch.all(V >= 0.), "Target should be non-negative!"
+        assert torch.all(V >= 0.), "Target should be non-negative."
         W = self.W
         H = self.H
         Z = self.Z
@@ -313,7 +313,7 @@ class SIPLCA3(BaseComponent):
         super().__init__(rank, **kwargs)
 
     @staticmethod
-    def reconstruct(H, W):
+    def reconstruct(H, W, Z):
         pad_size = (W.shape[2] - 1, W.shape[3] - 1, W.shape[4] - 1)
         out = F.conv3d(H, W.flip((2, 3, 4)) * Z[None, :], padding=pad_size)
         return out
