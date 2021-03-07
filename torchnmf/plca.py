@@ -174,6 +174,7 @@ class BaseComponent(torch.nn.Module):
             Z_alpha: float = 1,
             H_alpha: float = 1):
 
+        assert torch.all(V >= 0.), "Target should be non-negative!"
         W = self.W
         H = self.H
         Z = self.Z
