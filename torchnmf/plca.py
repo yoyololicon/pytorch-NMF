@@ -209,7 +209,7 @@ class BaseComponent(torch.nn.Module):
                 if H.requires_grad:
                     H.data.mul_(H.grad.relu())
                     if Z_prior is None:
-                        H_divider = get_norm(W)
+                        H_divider = get_norm(H)
                     else:
                         H_divider = Z_prior[(slice(None),) + (None,) * (H.dim() - 2)]
                     W.data.div_(H_divider)
