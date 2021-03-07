@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from .base import Base
 from .utils import normalize
-from .nmf import _get_H_kl_positive, _get_W_kl_positive
+from .nmf import _size_1_t, _size_2_t, _size_3_t
+from torch.nn.modules.utils import _single, _pair, _triple
 from tqdm import tqdm
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
@@ -31,19 +32,6 @@ def get_norm(x: Tensor):
     else:
         norm = x.sum()
     return norm
-
-
-def _double_backward_update(V: Tensor,
-                            WZH: Tensor,
-                            param: Parameter,
-                            pos: Tensor = None,
-                            retain_graph=False):
-    param.grad = None
-    # first backward
-    WH.backward(V / WZH, retain_graph=retain_graph)
-    neg = torch.clone(param.grad).relu_().add_(eps)
-    multiplier = neg / pos
-    param.data.mul_(multiplier)
 
 
 class BaseComponent(torch.nn.Module):
@@ -157,14 +145,18 @@ class BaseComponent(torch.nn.Module):
                 s += ', kernel_size={kernel_size}'
         return s.format(**self.__dict__)
 
-    def forward(self, H: Tensor = None, W: Tensor = None, Z: Tensor = None) -> Tensor:
+    def forward(self, H: Tensor = None, W: Tensor = None, Z: Tensor = None, norm: float = None) -> Tensor:
         if H is None:
             H = self.H
         if W is None:
             W = self.W
         if Z is None:
             Z = self.Z
-        return self.reconstruct(W, Z, H)
+
+        result = self.reconstruct(W, Z, H)
+        if norm is None:
+            return result
+        return result * norm
 
     @staticmethod
     def reconstruct(H: Tensor, W: Tensor, Z: Tensor) -> Tensor:
@@ -240,188 +232,88 @@ class BaseComponent(torch.nn.Module):
         return n_iter, norm
 
 
-class PLCA(_PLCA):
+class PLCA(BaseComponent):
 
-    def __init__(self, Vshape: tuple, rank: int = None, uniform=False):
-        self.K, self.M = Vshape
-        if not rank:
-            rank = self.K
-        super().__init__((self.K, rank), rank, (rank, self.M), (0,), (1,), uniform)
+    def __init__(self,
+                 Vshape: Iterable[int] = None,
+                 rank: int = None,
+                 **kwargs):
+        if isinstance(Vshape, Iterabc):
+            M, K = Vshape
+            rank = rank if rank else K
+            kwargs['W'] = (K, rank)
+            kwargs['H'] = (M, rank)
 
-    def reconstruct(self, W, Z, H):
-        return (W * Z) @ H
+        super().__init__(rank, **kwargs)
 
-    def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, bool, bool, bool, float, float, float) -> None
-        if update_W or update_Z:
-            new_W = VdivWZH @ self.H.t() * self.W * self.Z
-
-        if update_H:
-            H = self.fix_neg(self.W.mul(self.Z).t() @
-                             VdivWZH * self.H + H_alpha - 1)
-            self.H[:] = normalize(H, 1)
-
-        if update_W:
-            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), 0)
-
-        if update_Z:
-            self.Z[:] = normalize(self.fix_neg(new_W.sum(0) + Z_alpha - 1))
-
-    def sort(self):
-        _, maxidx = self.W.data.max(0)
-        _, idx = maxidx.sort()
-        self.W.data = self.W.data[:, idx]
-        self.H.data = self.H.data[idx]
-        self.Z.data = self.Z.data[idx]
+    @staticmethod
+    def reconstruct(H, W, Z):
+        return torch.einsum("bi,ji,i->bj", H, W, Z)
 
 
-class SIPLCA(_PLCA):
+class SIPLCA(BaseComponent):
 
-    def __init__(self, Vshape: tuple, rank: int = None, T: int = 1, uniform=False):
-        self.K, self.M = Vshape
-        self.pad_size = T - 1
-        if not rank:
-            rank = self.K
+    def __init__(self,
+                 Vshape: Iterable[int] = None,
+                 rank: int = None,
+                 T: _size_1_t = 1,
+                 **kwargs):
+        if isinstance(Vshape, Iterabc):
+            T, = _single(T)
+            batch, K, M = Vshape
+            rank = rank if rank else K
+            kwargs['W'] = (K, rank, T)
+            kwargs['H'] = (batch, rank, M - T + 1)
 
-        W_size = (self.K, rank, T)
-        H_size = (rank, self.M - T + 1)
-        H_norm_dim = (1,)
-        super().__init__(W_size, rank, H_size, (0, 2), H_norm_dim, uniform)
+        super().__init__(rank, **kwargs)
 
-    def reconstruct(self, W, Z, H):
-        return F.conv1d(H[None, ...], W.flip(2) * Z[:, None], padding=self.pad_size)[0]
-
-    def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, bool, bool, bool, float, float, float) -> None
-
-        if update_W or update_Z:
-            new_W = F.conv1d(VdivWZH[:, None], self.H[:, None]
-                             * self.Z[:, None, None]) * self.W
-
-        if update_H:
-            new_H = F.conv1d(VdivWZH[None, ...], torch.transpose(
-                self.W * self.Z[:, None], 0, 1))[0] * self.H
-            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), 1)
-            self.H[:] = new_H
-
-        if update_W:
-            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2))
-
-        if update_Z:
-            Z = normalize(self.fix_neg(new_W.sum((0, 2)) + Z_alpha - 1))
-            self.Z[:] = Z
-
-    def sort(self):
-        _, maxidx = self.W.data.sum(2).max(0)
-        _, idx = maxidx.sort()
-        self.W.data = self.W.data[:, idx]
-        self.H.data = self.H.data[idx]
-        self.Z.data = self.Z.data[idx]
+    @staticmethod
+    def reconstruct(H, W, Z):
+        pad_size = W.shape[2] - 1
+        return F.conv1d(H, W.flip(2) * Z[None, :], padding=pad_size)
 
 
-class SIPLCA2(_PLCA):
+class SIPLCA2(BaseComponent):
 
-    def __init__(self, Vshape: tuple, rank: int = None, win=1, uniform=False):
-        try:
-            F, T = win
-        except:
-            F = T = win
-        if len(Vshape) == 3:
-            self.channel, self.K, self.M = Vshape
-        else:
-            self.K, self.M = Vshape
-            self.channel = 1
+    def __init__(self,
+                 Vshape: Iterable[int] = None,
+                 rank: int = None,
+                 kernel_size: _size_2_t = 1,
+                 **kwargs):
+        if isinstance(Vshape, Iterabc):
+            kernel_size = _pair(kernel_size)
+            H, W = kernel_size
+            batch, channel, K, M = Vshape
+            rank = rank if rank else K
+            kwargs['W'] = (channel, rank,) + kernel_size
+            kwargs['H'] = (batch, rank, K - H + 1, M - W + 1)
+        super().__init__(rank, **kwargs)
 
-        self.pad_size = (F - 1, T - 1)
-        if not rank:
-            rank = self.K
-
-        W_size = (self.channel, rank, F, T)
-        H_size = (rank, self.K - F + 1, self.M - T + 1)
-        W_norm_dim = (0, 2, 3)
-        H_norm_dim = (1, 2)
-        super().__init__(W_size, rank, H_size, W_norm_dim, H_norm_dim, uniform)
-
-    def reconstruct(self, W, Z, H):
-        out = F.conv2d(H[None, ...], W.mul(Z[:, None, None]).flip(
-            (2, 3)), padding=self.pad_size)[0]
-        if self.channel == 1:
-            return out[0]
+    @staticmethod
+    def reconstruct(H, W, Z):
+        pad_size = (W.shape[2] - 1, W.shape[3] - 1)
+        out = F.conv2d(H, W.flip((2, 3)) * Z[None, :], padding=pad_size)
         return out
 
-    def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, bool, bool, bool, float, float, float) -> None
-        VdivWZH = VdivWZH.view(self.channel, 1, self.K, self.M)
-        if update_W or update_Z:
-            new_W = F.conv2d(VdivWZH, self.H.mul(
-                self.Z[:, None, None])[:, None]) * self.W
 
-        if update_H:
-            new_H = F.conv2d(VdivWZH.transpose(0, 1), torch.transpose(
-                self.W * self.Z[:, None, None], 0, 1))[0] * self.H
-            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2))
-            self.H[:] = new_H
+class SIPLCA3(BaseComponent):
+    def __init__(self,
+                 Vshape: Iterable[int] = None,
+                 rank: int = None,
+                 kernel_size: _size_3_t = 1,
+                 **kwargs):
+        if isinstance(Vshape, Iterabc):
+            kernel_size = _triple(kernel_size)
+            D, H, W = kernel_size
+            batch, channel, N, K, M = Vshape
+            rank = rank if rank else K
+            kwargs['W'] = (channel, rank) + kernel_size
+            kwargs['H'] = (batch, rank, N - D + 1, K - H + 1, M - W + 1)
 
-        if update_W:
-            self.W[:] = normalize(self.fix_neg(new_W + W_alpha - 1), (0, 2, 3))
+        super().__init__(rank, **kwargs)
 
-        if update_Z:
-            Z = normalize(self.fix_neg(new_W.sum((0, 2, 3)) + Z_alpha - 1))
-            self.Z[:] = Z
-
-    def sort(self):
-        raise NotImplementedError
-
-
-class SIPLCA3(_PLCA):
-    def __init__(self, Vshape: tuple, rank: int = None, win=1, uniform=False):
-        try:
-            T, H, W = win
-        except:
-            T = H = W = win
-        if len(Vshape) == 4:
-            self.channel, self.N, self.K, self.M = Vshape
-        else:
-            self.N, self.K, self.M = Vshape
-            self.channel = 1
-
-        self.pad_size = (T - 1, H - 1, W - 1)
-        if not rank:
-            rank = self.K
-
-        W_size = (self.channel, rank, T, H, W)
-        H_size = (rank, self.N - T + 1, self.K - H + 1, self.M - W + 1)
-        W_norm_dim = (0, 2, 3, 4)
-        H_norm_dim = (1, 2, 3)
-        super().__init__(W_size, rank, H_size, W_norm_dim, H_norm_dim, uniform)
-
-    def reconstruct(self, W, Z, H):
-        out = F.conv3d(H[None, ...], W.mul(Z[:, None, None, None]).flip(
-            (2, 3, 4)), padding=self.pad_size)[0]
-        if self.channel == 1:
-            return out[0]
+    @staticmethod
+    def reconstruct(H, W):
+        pad_size = (W.shape[2] - 1, W.shape[3] - 1, W.shape[4] - 1)
+        out = F.conv3d(H, W.flip((2, 3, 4)) * Z[None, :], padding=pad_size)
         return out
-
-    def update_params(self, VdivWZH, update_W, update_H, update_Z, W_alpha, H_alpha, Z_alpha):
-        # type: (Tensor, bool, bool, bool, float, float, float) -> None
-        VdivWZH = VdivWZH.view(self.channel, 1, self.N, self.K, self.M)
-        if update_W or update_Z:
-            new_W = F.conv3d(VdivWZH, self.H.mul(self.Z[:, None, None, None])[
-                             :, None], padding=self.pad_size) * self.W
-
-        if update_H:
-            new_H = F.conv3d(VdivWZH.transpose(0, 1), torch.transpose(self.W * self.Z[:, None, None, None], 0, 1))[
-                0] * self.H
-            new_H = normalize(self.fix_neg(new_H + H_alpha - 1), (1, 2, 3))
-            self.H[:] = new_H
-
-        if update_W:
-            self.W[:] = normalize(self.fix_neg(
-                new_W + W_alpha - 1), (0, 2, 3, 4))
-
-        if update_Z:
-            Z = normalize(self.fix_neg(new_W.sum((0, 2, 3, 4)) + Z_alpha - 1))
-            self.Z[:] = Z
-
-    def sort(self):
-        raise NotImplementedError
