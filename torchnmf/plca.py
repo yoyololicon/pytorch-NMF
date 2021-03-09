@@ -83,7 +83,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('W', Parameter(
                 torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
-        elif isinstance(W, Iterabc) and trainable_W:
+        elif isinstance(W, Iterabc):
             self.register_parameter('W', Parameter(torch.randn(*W).abs()))
         else:
             self.register_parameter('W', None)
@@ -98,7 +98,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('H', Parameter(
                 torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
-        elif isinstance(H, Iterabc) and trainable_H:
+        elif isinstance(H, Iterabc):
             self.register_parameter('H', Parameter(torch.randn(*H).abs()))
         else:
             self.register_parameter('H', None)
@@ -203,7 +203,8 @@ class BaseComponent(torch.nn.Module):
                         W_divider = get_norm(W)
                         Z_prior = W_divider.squeeze()
                     else:
-                        W_divider = Z_prior[(slice(None),) + (None,) * (W.dim() - 2)]
+                        W_divider = Z_prior[(
+                            slice(None),) + (None,) * (W.dim() - 2)]
                     W.data.div_(W_divider)
 
                 if H.requires_grad:
@@ -211,7 +212,8 @@ class BaseComponent(torch.nn.Module):
                     if Z_prior is None:
                         H_divider = get_norm(H)
                     else:
-                        H_divider = Z_prior[(slice(None),) + (None,) * (H.dim() - 2)]
+                        H_divider = Z_prior[(
+                            slice(None),) + (None,) * (H.dim() - 2)]
                     W.data.div_(H_divider)
 
                 if Z_alpha != 1:
@@ -326,5 +328,6 @@ class SIPLCA3(BaseComponent):
     @staticmethod
     def reconstruct(H, W, Z):
         pad_size = (W.shape[2] - 1, W.shape[3] - 1, W.shape[4] - 1)
-        out = F.conv3d(H, W.flip((2, 3, 4)) * Z.view(-1, 1, 1, 1), padding=pad_size)
+        out = F.conv3d(H, W.flip((2, 3, 4)) *
+                       Z.view(-1, 1, 1, 1), padding=pad_size)
         return out
