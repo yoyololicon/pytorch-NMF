@@ -172,7 +172,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('W', Parameter(
                 torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
-        elif isinstance(W, Iterabc) and trainable_W:
+        elif isinstance(W, Iterabc):
             self.register_parameter('W', Parameter(torch.randn(*W).abs()))
         else:
             self.register_parameter('W', None)
@@ -182,7 +182,7 @@ class BaseComponent(torch.nn.Module):
             self.register_parameter('H', Parameter(
                 torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
-        elif isinstance(H, Iterabc) and trainable_H:
+        elif isinstance(H, Iterabc):
             self.register_parameter('H', Parameter(torch.randn(*H).abs()))
         else:
             self.register_parameter('H', None)
