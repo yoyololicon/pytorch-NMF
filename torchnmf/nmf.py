@@ -453,6 +453,10 @@ class NMF(BaseComponent):
         To match with PyTorch convention, this class actually use :math:`H^T` so the batch dimension is the first
         dimension, and require input target matrix V is also transposed.
 
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
     Args:
         Vshape (tuple, optional): Size of target matrix V
         rank (int, optional): Size of hidden dimension
@@ -517,6 +521,10 @@ class NMFD(BaseComponent):
 
     Note:
         To match with PyTorch convention, an extra batch dimension is required for target matrix V.
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target matrix V
@@ -593,6 +601,10 @@ class NMF2D(BaseComponent):
     Note:
         To match with PyTorch convention, an extra batch dimension is required for target tensor V.
 
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
     Args:
         Vshape (tuple, optional): Size of target tensor V
         rank (int, optional): Size of hidden dimension
@@ -659,6 +671,10 @@ class NMF3D(BaseComponent):
 
     Note:
         To match with PyTorch convention, an extra batch dimension is required for target tensor V.
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target tensor V
