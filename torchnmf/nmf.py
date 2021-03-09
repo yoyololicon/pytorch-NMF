@@ -455,7 +455,7 @@ class NMF(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target matrix V
@@ -524,7 +524,7 @@ class NMFD(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target matrix V
@@ -603,7 +603,7 @@ class NMF2D(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target tensor V
@@ -674,7 +674,7 @@ class NMF3D(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and overide arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target tensor V
