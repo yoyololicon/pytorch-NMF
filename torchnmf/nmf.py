@@ -138,8 +138,8 @@ class BaseComponent(torch.nn.Module):
         rank (int): Size of hidden dimension
         W (tuple or Tensor): Size or initial weights of template tensor W
         H (tuple or Tensor): Size or initial weights of activation tensor H
-        trainable_W (bool):  Controls whether template tensor W is learnable when initial weights is given. Default: ``True``
-        trainable_H (bool):  Controls whether activation tensor H is learnable when initial weights is given. Default: ``True``
+        trainable_W (bool):  Controls whether template tensor W is trainable when initial weights is given. Default: ``True``
+        trainable_H (bool):  Controls whether activation tensor H is trainable when initial weights is given. Default: ``True``
 
     Attributes:
         W (Tensor or None): the template tensor of the module if corresponding argument is given.
