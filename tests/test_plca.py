@@ -142,18 +142,18 @@ def test_siplca3_invalid_construct(Vshape):
 @pytest.mark.parametrize('Z_alpha', [1, 0.999])
 @pytest.mark.parametrize('H_alpha', [1, 0.999])
 @pytest.mark.parametrize('trainable_Z', [True, False])
+@pytest.mark.parametrize('trainable_W', [True, False])
 def test_fit(tol,
              verbose,
              W_alpha,
              H_alpha,
              Z_alpha,
-             trainable_Z):
+             trainable_Z,
+             trainable_W):
     max_iter = 100
     V = torch.rand(100, 50)
-    if trainable_Z:
-        m = PLCA(V.shape, 8)
-    else:
-        m = PLCA(V.shape, 8, Z=torch.ones(8) / 8, trainable_Z=False)
+    m = PLCA(None, 8, H=torch.rand(100, 8), W=torch.rand(50, 8), Z=torch.ones(8) /
+             8, trainable_Z=trainable_Z, trainable_W=trainable_W)
     n_iter, norm = m.fit(V, tol, max_iter, verbose, W_alpha, H_alpha, Z_alpha)
     assert n_iter <= max_iter
     y = m(norm=norm)
