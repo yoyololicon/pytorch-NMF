@@ -1,5 +1,6 @@
 # Non-negative Matrix Fatorization in PyTorch
 
+[![build](https://github.com/yoyololicon/pytorch-NMF/workflows/python-package/badge.svg)](https://github.com/yoyololicon/pytorch-NMF/actions/workflows/python-package.yml)
 [![Documentation Status](https://readthedocs.org/projects/pytorch-nmf/badge/?version=latest)](https://pytorch-nmf.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/torchnmf.svg)](https://badge.fury.io/py/torchnmf)
 
