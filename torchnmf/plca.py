@@ -2,7 +2,6 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter
-from .utils import normalize
 from .nmf import _size_1_t, _size_2_t, _size_3_t
 from torch.nn.modules.utils import _single, _pair, _triple
 from tqdm import tqdm
@@ -12,7 +11,7 @@ from .metrics import kl_div
 from .constants import eps
 
 __all__ = [
-    'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
+    'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3', 'BaseComponent'
 ]
 
 
@@ -87,7 +86,7 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('W', None)
 
-        if hasattr(self, "W"):
+        if getattr(self, "W") is not None:
             self.W.data.div_(get_norm(self.W))
             infer_rank = self.W.shape[1]
 
@@ -102,7 +101,7 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('H', None)
 
-        if hasattr(self, "H"):
+        if getattr(self, "H") is not None:
             self.H.data.div_(get_norm(self.H))
             infer_rank = self.H.shape[1]
 
@@ -118,19 +117,19 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('Z', None)
 
-        if hasattr(self, "Z"):
+        if getattr(self, "Z") is not None:
             self.Z.data.div_(get_norm(self.Z))
             infer_rank = self.Z.shape[0]
 
         if infer_rank is None:
             assert rank, "A rank should be given when W, H and Z are not available!"
         else:
-            if hasattr(self, "Z"):
-                assert self.Z.shape[0] == infer_rank, "Latent size Z does not match with others!"
-            if hasattr(self, "H"):
-                assert self.H.shape[1] == infer_rank, "Latent size H does not match with others!"
-            if hasattr(self, "W"):
-                assert self.W.shape[1] == infer_rank, "Latent size W does not match with others!"
+            if getattr(self, "Z") is not None:
+                assert self.Z.shape[0] == infer_rank, "Latent size of Z does not match with others!"
+            if getattr(self, "H") is not None:
+                assert self.H.shape[1] == infer_rank, "Latent size of H does not match with others!"
+            if getattr(self, "W") is not None:
+                assert self.W.shape[1] == infer_rank, "Latent size of W does not match with others!"
             rank = infer_rank
 
         self.rank = rank
@@ -151,7 +150,7 @@ class BaseComponent(torch.nn.Module):
         if Z is None:
             Z = self.Z
 
-        result = self.reconstruct(W, Z, H)
+        result = self.reconstruct(H, W, Z)
         if norm is None:
             return result
         return result * norm
@@ -170,8 +169,8 @@ class BaseComponent(torch.nn.Module):
             max_iter: int = 200,
             verbose: bool = False,
             W_alpha: float = 1,
-            Z_alpha: float = 1,
-            H_alpha: float = 1):
+            H_alpha: float = 1,
+            Z_alpha: float = 1):
 
         assert torch.all(V >= 0.), "Target should be non-negative."
         W = self.W

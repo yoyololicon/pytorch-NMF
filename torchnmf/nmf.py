@@ -80,7 +80,7 @@ def _double_backward_update(V: Tensor,
     if l1_reg > 0:
         pos.add_(l1_reg)
     if l2_reg > 0:
-        pos.add_(param.data, alpha=l2_reg)
+        pos = pos.add(param.data, alpha=l2_reg)
     multiplier = neg / pos
     if gamma != 1:
         multiplier.pow_(gamma)
@@ -167,36 +167,40 @@ class BaseComponent(torch.nn.Module):
                  trainable_H: bool = True):
         super().__init__()
 
+        infer_rank = None
         if isinstance(W, Tensor):
+            assert torch.all(W >= 0.), "Tensor W should be non-negative."
             self.register_parameter('W', Parameter(
                 torch.empty(*W.size()), requires_grad=trainable_W))
             self.W.data.copy_(W)
+            infer_rank = self.W.shape[1]
         elif isinstance(W, Iterabc):
             self.register_parameter('W', Parameter(torch.randn(*W).abs()))
+            infer_rank = W[1]
         else:
             self.register_parameter('W', None)
 
         if isinstance(H, Tensor):
+            assert torch.all(H >= 0.), "Tensor H should be non-negative."
             H_shape = H.shape
             self.register_parameter('H', Parameter(
                 torch.empty(*H_shape), requires_grad=trainable_H))
             self.H.data.copy_(H)
+            infer_rank = self.H.shape[1]
         elif isinstance(H, Iterabc):
             self.register_parameter('H', Parameter(torch.randn(*H).abs()))
+            infer_rank = H[1]
         else:
             self.register_parameter('H', None)
 
-        if isinstance(self.W, Tensor):
-            if isinstance(self.H, Tensor):
-                assert self.W.shape[1] == self.H.shape[1], "Latent size of W and H should be equal!"
-            rank = self.W.shape[1]
-            self.out_channels = self.W.shape[0]
-            if len(self.W.shape) > 2:
-                self.kernel_size = tuple(self.W.shape[2:])
-        elif isinstance(self.H, Tensor):
-            rank = self.H.shape[1]
+        if infer_rank is None:
+            assert rank, "A rank should be given when W and H are not available!"
         else:
-            assert rank, "A rank should be given when both W and H are not available!"
+            if getattr(self, "H") is not None:
+                assert self.H.shape[1] == infer_rank, "Latent size of H does not match with others!"
+            if getattr(self, "W") is not None:
+                assert self.W.shape[1] == infer_rank, "Latent size of W does not match with others!"
+            rank = infer_rank
 
         self.rank = rank
 
@@ -270,6 +274,7 @@ class BaseComponent(torch.nn.Module):
         Returns:
             total number of iterations.
         """
+        assert torch.all(V >= 0.), "Target should be non-negative."
 
         W = self.W
         H = self.H
@@ -311,7 +316,7 @@ class BaseComponent(torch.nn.Module):
                         break
                     previous_loss = loss
 
-        return n_iter
+        return n_iter + 1
 
     def sparse_fit(self,
                    V,
@@ -437,7 +442,7 @@ class BaseComponent(torch.nn.Module):
                         loss = beta_div(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
-        return n_iter
+        return n_iter + 1
 
 
 class NMF(BaseComponent):
