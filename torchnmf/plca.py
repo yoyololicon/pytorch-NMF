@@ -87,7 +87,7 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('W', None)
 
-        if hasattr(self, "W"):
+        if getattr(self, "W") is not None:
             self.W.data.div_(get_norm(self.W))
             infer_rank = self.W.shape[1]
 
@@ -102,7 +102,7 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('H', None)
 
-        if hasattr(self, "H"):
+        if getattr(self, "H") is not None:
             self.H.data.div_(get_norm(self.H))
             infer_rank = self.H.shape[1]
 
@@ -118,19 +118,19 @@ class BaseComponent(torch.nn.Module):
         else:
             self.register_parameter('Z', None)
 
-        if hasattr(self, "Z"):
+        if getattr(self, "Z") is not None:
             self.Z.data.div_(get_norm(self.Z))
             infer_rank = self.Z.shape[0]
 
         if infer_rank is None:
             assert rank, "A rank should be given when W, H and Z are not available!"
         else:
-            if hasattr(self, "Z"):
-                assert self.Z.shape[0] == infer_rank, "Latent size Z does not match with others!"
-            if hasattr(self, "H"):
-                assert self.H.shape[1] == infer_rank, "Latent size H does not match with others!"
-            if hasattr(self, "W"):
-                assert self.W.shape[1] == infer_rank, "Latent size W does not match with others!"
+            if getattr(self, "Z") is not None:
+                assert self.Z.shape[0] == infer_rank, "Latent size of Z does not match with others!"
+            if getattr(self, "H") is not None:
+                assert self.H.shape[1] == infer_rank, "Latent size of H does not match with others!"
+            if getattr(self, "W") is not None:
+                assert self.W.shape[1] == infer_rank, "Latent size of W does not match with others!"
             rank = infer_rank
 
         self.rank = rank
