@@ -2,7 +2,6 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter
-from .utils import normalize
 from .nmf import _size_1_t, _size_2_t, _size_3_t
 from torch.nn.modules.utils import _single, _pair, _triple
 from tqdm import tqdm
@@ -12,7 +11,7 @@ from .metrics import kl_div
 from .constants import eps
 
 __all__ = [
-    'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
+    'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3', 'BaseComponent'
 ]
 
 

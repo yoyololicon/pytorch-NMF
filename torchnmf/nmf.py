@@ -80,7 +80,7 @@ def _double_backward_update(V: Tensor,
     if l1_reg > 0:
         pos.add_(l1_reg)
     if l2_reg > 0:
-        pos.add_(param.data, alpha=l2_reg)
+        pos = pos.add(param.data, alpha=l2_reg)
     multiplier = neg / pos
     if gamma != 1:
         multiplier.pow_(gamma)
@@ -315,7 +315,7 @@ class BaseComponent(torch.nn.Module):
                         break
                     previous_loss = loss
 
-        return n_iter
+        return n_iter + 1
 
     def sparse_fit(self,
                    V,
@@ -441,7 +441,7 @@ class BaseComponent(torch.nn.Module):
                         loss = beta_div(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
-        return n_iter
+        return n_iter + 1
 
 
 class NMF(BaseComponent):
