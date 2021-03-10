@@ -7,6 +7,7 @@ from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .metrics import beta_div
 from tqdm import tqdm
+from .constants import eps
 
 _size_1_t = Union[int, Tuple[int]]
 _size_2_t = Union[int, Tuple[int, int]]
@@ -15,8 +16,6 @@ _size_3_t = Union[int, Tuple[int, int, int]]
 __all__ = [
     'BaseComponent', 'NMF', 'NMFD', 'NMF2D', 'NMF3D'
 ]
-
-eps = 1e-8
 
 
 def _proj_func(s: Tensor,

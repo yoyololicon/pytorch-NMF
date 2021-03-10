@@ -1,8 +1,7 @@
 import torch
 from torch.optim.optimizer import Optimizer
 from .nmf import _proj_func, _get_norm
-
-eps = 1e-8
+from .constants import eps
 
 
 class BetaMu(Optimizer):
