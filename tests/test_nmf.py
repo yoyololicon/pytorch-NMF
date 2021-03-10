@@ -119,7 +119,7 @@ def test_fit(beta,
     assert n_iter <= max_iter
 
 
-@pytest.mark.parametrize('beta', [1, 2])
+@pytest.mark.parametrize('beta', [0, 1, 2, 2.5])
 @pytest.mark.parametrize('verbose', [True, False])
 @pytest.mark.parametrize('sW, sH', [(None,) * 2, (0.3, None), (None, 0.3)])
 def test_sparse_fit(beta,
