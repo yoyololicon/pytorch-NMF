@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor
 from torch.nn import functional as F
+from .constants import eps
 
 
 def kl_div(input: Tensor, target: Tensor) -> Tensor:
@@ -19,7 +20,7 @@ def kl_div(input: Tensor, target: Tensor) -> Tensor:
     Returns:
         Single element Tensor
     """
-    return F.kl_div(input.add(1e-8).log(), target, reduction='sum') - target.sum() + input.sum()
+    return F.kl_div(input.add(eps).log(), target, reduction='sum') - target.sum() + input.sum()
 
 def euclidean(input: Tensor, target: Tensor) -> Tensor:
     r"""The `Euclidean distance
@@ -52,8 +53,8 @@ def is_div(input: Tensor, target: Tensor) -> Tensor:
     Returns:
         Single element Tensor
     """
-    div = target / input.add(1e-8)
-    return div.sum() - div.add(1e-8).log().sum() - target.numel()
+    div = target / input.add(eps)
+    return div.sum() - div.add(eps).log().sum() - target.numel()
 
 
 def beta_div(input, target, beta=2):

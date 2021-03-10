@@ -9,12 +9,11 @@ from tqdm import tqdm
 from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .metrics import kl_div
+from .constants import eps
 
 __all__ = [
     'PLCA', 'SIPLCA', 'SIPLCA2', 'SIPLCA3'
 ]
-
-eps = 1e-8
 
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):

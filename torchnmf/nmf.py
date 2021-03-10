@@ -7,6 +7,7 @@ from typing import Union, Iterable, Optional, List, Tuple
 from collections.abc import Iterable as Iterabc
 from .metrics import beta_div
 from tqdm import tqdm
+from .constants import eps
 
 _size_1_t = Union[int, Tuple[int]]
 _size_2_t = Union[int, Tuple[int, int]]
@@ -15,8 +16,6 @@ _size_3_t = Union[int, Tuple[int, int, int]]
 __all__ = [
     'BaseComponent', 'NMF', 'NMFD', 'NMF2D', 'NMF3D'
 ]
-
-eps = 1e-8
 
 
 def _proj_func(s: Tensor,
@@ -138,8 +137,8 @@ class BaseComponent(torch.nn.Module):
         rank (int): Size of hidden dimension
         W (tuple or Tensor): Size or initial weights of template tensor W
         H (tuple or Tensor): Size or initial weights of activation tensor H
-        trainable_W (bool):  Controls whether template tensor W is learnable when initial weights is given. Default: ``True``
-        trainable_H (bool):  Controls whether activation tensor H is learnable when initial weights is given. Default: ``True``
+        trainable_W (bool):  Controls whether template tensor W is trainable when initial weights is given. Default: ``True``
+        trainable_H (bool):  Controls whether activation tensor H is trainable when initial weights is given. Default: ``True``
 
     Attributes:
         W (Tensor or None): the template tensor of the module if corresponding argument is given.
