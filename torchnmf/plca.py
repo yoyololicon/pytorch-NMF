@@ -150,7 +150,7 @@ class BaseComponent(torch.nn.Module):
         if Z is None:
             Z = self.Z
 
-        result = self.reconstruct(W, Z, H)
+        result = self.reconstruct(H, W, Z)
         if norm is None:
             return result
         return result * norm
@@ -169,8 +169,8 @@ class BaseComponent(torch.nn.Module):
             max_iter: int = 200,
             verbose: bool = False,
             W_alpha: float = 1,
-            Z_alpha: float = 1,
-            H_alpha: float = 1):
+            H_alpha: float = 1,
+            Z_alpha: float = 1):
 
         assert torch.all(V >= 0.), "Target should be non-negative."
         W = self.W

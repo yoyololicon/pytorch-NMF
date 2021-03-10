@@ -274,6 +274,7 @@ class BaseComponent(torch.nn.Module):
         Returns:
             total number of iterations.
         """
+        assert torch.all(V >= 0.), "Target should be non-negative."
 
         W = self.W
         H = self.H
