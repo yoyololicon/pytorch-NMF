@@ -167,8 +167,8 @@ class SparsityProj(Optimizer):
                 for p, g in params:
                     norms = _get_norm(p, dim)
                     p.add_(g, alpha=-lr)
-                    dim = p.numel() // p.shape[dim]
-                    L1 = dim ** 0.5 * (1 - sparsity) + sparsity
+                    N = p.numel() // p.shape[dim]
+                    L1 = N ** 0.5 * (1 - sparsity) + sparsity
                     for j in range(p.shape[dim]):
                         slicer = (slice(None),) * dim + (j,)
                         p[slicer] = _proj_func(

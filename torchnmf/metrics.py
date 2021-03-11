@@ -22,6 +22,7 @@ def kl_div(input: Tensor, target: Tensor) -> Tensor:
     """
     return F.kl_div(input.add(eps).log(), target, reduction='sum') - target.sum() + input.sum()
 
+
 def euclidean(input: Tensor, target: Tensor) -> Tensor:
     r"""The `Euclidean distance
     <https://en.wikipedia.org/wiki/Euclidean_distance>`__, which equal to β-divergence loss when β = 2.
@@ -53,8 +54,8 @@ def is_div(input: Tensor, target: Tensor) -> Tensor:
     Returns:
         Single element Tensor
     """
-    div = target / input.add(eps)
-    return div.sum() - div.add(eps).log().sum() - target.numel()
+    div = target.add(eps) / input.add(eps)
+    return div.sum() - div.log().sum() - target.numel()
 
 
 def beta_div(input, target, beta=2):
