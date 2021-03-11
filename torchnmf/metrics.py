@@ -105,19 +105,3 @@ def sparseness(x: Tensor) -> Tensor:
     """
     N = x.numel()
     return (N ** 0.5 - x.norm(1) / x.norm(2)) / (N ** 0.5 - 1)
-
-
-if __name__ == '__main__':
-    x = torch.rand(5, 5)
-    y = torch.rand_like(x)
-    print((y * (y / x).log()).sum(), F.kl_div(x.log(), y, reduction='sum'))
-    x.requires_grad = True
-
-    loss = euclidean(x, y)
-    loss.backward()
-    print(x.grad, loss.item())
-    x.grad.zero_()
-
-    loss = beta_div(x, y)
-    loss.backward()
-    print(x.grad, loss.item())
