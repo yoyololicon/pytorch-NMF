@@ -36,4 +36,12 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest --cov-report term-missing:skip-covered --cov=torchnmf
+        pytest --cov-report=xml term-missing:skip-covered --cov=torchnmf
+    - name: Codecov
+      uses: codecov/codecov-action@v1.2.2
+      with:
+        flags: unittests
+        env_vars: OS,PYTHON
+        name: codecov-umbrella
+        fail_ci_if_error: true
+        verbose: true
