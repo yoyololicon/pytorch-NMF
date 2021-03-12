@@ -401,7 +401,8 @@ class SIPLCA(BaseComponent):
     Shape:
         - V: :math:`(N, C, L_{out})`
         - W: :math:`(C, R, T)`
-        - H: :math:`(N, R, L_{in})` where
+        - H: :math:`(N, R, L_{in})` 
+        - Z: :math:`(R,)` where
 
         .. math::
             L_{in} = L_{out} - T + 1
@@ -414,6 +415,8 @@ class SIPLCA(BaseComponent):
         torch.Size([33, 16, 3])
         >>> m.H.size()
         torch.Size([1, 16, 48])
+        >>> m.Z.size()
+        torch.Size([16])
         >>> HZWt = m()
         >>> HZWt.size()
         torch.Size([1, 33, 50])
@@ -472,7 +475,8 @@ class SIPLCA2(BaseComponent):
     Shape:
         - V: :math:`(N, C, L_{out}, M_{out})`
         - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1])`
-        - H: :math:`(N, R, L_{in}, M_{in})` where
+        - H: :math:`(N, R, L_{in}, M_{in})` 
+        - Z: :math:`(R,)` where
 
         .. math::
             L_{in} = L_{out} - \text{kernel_size}[0] + 1
@@ -487,6 +491,8 @@ class SIPLCA2(BaseComponent):
         torch.Size([1, 16, 3, 3])
         >>> m.H.size()
         torch.Size([1, 16, 31, 48])
+        >>> m.Z.size()
+        torch.Size([16])
         >>> HZWt = m()
         >>> HZWt.size()
         torch.Size([1, 1, 33, 50])
@@ -546,7 +552,8 @@ class SIPLCA3(BaseComponent):
     Shape:
         - V: :math:`(N, C, L_{out}, M_{out}, O_{out})`
         - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1], \text{kernel_size}[2])`
-        - H: :math:`(N, R, L_{in}, M_{in}, O_{in})` where
+        - H: :math:`(N, R, L_{in}, M_{in}, O_{in})`
+        - Z: :math:`(R,)` where
 
         .. math::
             L_{in} = L_{out} - \text{kernel_size}[0] + 1
@@ -563,8 +570,10 @@ class SIPLCA3(BaseComponent):
         torch.Size([3, 8, 5, 5, 20])
         >>> m.H.size()
         torch.Size([1, 8, 60, 60, 81])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> m.Z.size()
+        torch.Size([8])
+        >>> HZWt = m()
+        >>> HZWt.size()
         torch.Size([1, 3, 64, 64, 100])
 
     .. _Shift-Invariant Probabilistic Latent Component Analysis:

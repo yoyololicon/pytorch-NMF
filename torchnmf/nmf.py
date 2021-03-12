@@ -477,8 +477,8 @@ class NMF(BaseComponent):
         torch.Size([30, 5])
         >>> m.H.size()
         torch.Size([20, 5])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> HWt = m()
+        >>> HWt.size()
         torch.Size([20, 30])
 
     """
@@ -549,8 +549,8 @@ class NMFD(BaseComponent):
         torch.Size([33, 16, 3])
         >>> m.H.size()
         torch.Size([1, 16, 48])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> HWt = m()
+        >>> HWt.size()
         torch.Size([1, 33, 50])
 
     .. _Non-negative Matrix Factor Deconvolution; Extraction of Multiple Sound Sources from Monophonic Inputs:
@@ -629,8 +629,8 @@ class NMF2D(BaseComponent):
         torch.Size([1, 16, 3, 3])
         >>> m.H.size()
         torch.Size([1, 16, 31, 48])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> HWt = m()
+        >>> HWt.size()
         torch.Size([1, 1, 33, 50])
 
     .. _Nonnegative Matrix Factor 2-D Deconvolution for Blind Single Channel Source Separation:
@@ -703,8 +703,8 @@ class NMF3D(BaseComponent):
         torch.Size([3, 8, 5, 5, 20])
         >>> m.H.size()
         torch.Size([1, 8, 60, 60, 81])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> HWt = m()
+        >>> HWt.size()
         torch.Size([1, 3, 64, 64, 100])
 
     """
