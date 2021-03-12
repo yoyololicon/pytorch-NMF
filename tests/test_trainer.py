@@ -28,6 +28,8 @@ def test_beta_trainer(beta, l1_reg, l2_reg, orthogonal):
 
     for _ in range(10):
         trainer.step(closure)
+        for p in m.parameters():
+            assert torch.all(p >= 0.)
     return
 
 
@@ -46,6 +48,7 @@ def test_sparse_trainer(attr):
 
     for _ in range(10):
         trainer.step(closure)
+        assert torch.all(getattr(m, attr) >= 0.)
     return
 
 

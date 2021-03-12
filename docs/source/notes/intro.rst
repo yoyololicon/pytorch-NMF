@@ -109,6 +109,7 @@ Here is how you do it:
             return WWWH
 
     model = Chain()
+    output = model()
 
 You can also use :obj:`torch.nn.Sequential` to construct this kind of chaining model:
 
@@ -119,6 +120,9 @@ You can also use :obj:`torch.nn.Sequential` to construct this kind of chaining m
         NMF(W=(24, 10)),
         NMF(W=(64, 24))
     )
+    # In newer version of PyTorch at least one input should be given
+    # We can just give it `None`
+    output = model(None)
 
 To fit the model, instead of calling class method ``fit``, you now need to construct a NMF trainer:
 
@@ -137,5 +141,5 @@ To update parameters, you need to call ``step()`` function in every iteration:
     for e in range(epochs):
         def closure():
             trainer.zero_grad()
-            return V.t(), model()
+            return V.t(), model(None)
         trainer.step(closure)
