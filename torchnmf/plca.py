@@ -304,14 +304,14 @@ class BaseComponent(torch.nn.Module):
 class PLCA(BaseComponent):
     r"""Probabilistic Latent Component Analysis (PLCA).
 
-    Estimate two marginals :math:`P(v_c|z)` and :math:`P(v_n|z)`, which is the matrix W and H, 
-    and a prior :math:`P(z)` which is the vector Z, that approximate the observed :math:`P(V)`,
-    where :math:`P(V)` is obtained via ``V / V.sum()`` so the total probabilities sum to 1.
+    Estimate two marginals :math:`P(c|z)` and :math:`P(n|z)`, which is the matrix W and H, 
+    and a prior :math:`P(z)` which is the vector Z, that approximate the observed :math:`P(n,c)`,
+    where :math:`P(n,c)` is obtained via ``V / V.sum()`` so the total probabilities sum to 1.
 
     More precisely:
 
     .. math::
-        P(v_{n, c}) \approx \sum_{z}P(v_c|z)P(z)P(v_n|z)
+        P(n, c) \approx \sum_{z}P(c|z)P(z)P(n|z)
 
     In matrix form:
 
@@ -373,15 +373,15 @@ class PLCA(BaseComponent):
 class SIPLCA(BaseComponent):
     r"""Shift Invariant Probabilistic Latent Component Analysis (SI-PLCA).
 
-    Estimate two marginals :math:`P(v_{c,t}|z)` and :math:`P(v_{n,l}|z)`, 
+    Estimate two marginals :math:`P(c,t|z)` and :math:`P(n,l|z)`, 
     which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
-    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    that approximate the observed :math:`P(n,c,l)`, where :math:`P(n,c,l)` is obtained via ``V / V.sum()`` 
     so the total probabilities sum to 1.
 
     More precisely:
 
     .. math::
-        P(v_{n, c, l}) \approx \sum_{z} \sum_{t} P(v_{c,t}|z)P(z)P(v_{n,l-t}|z)
+        P(n, c, l) \approx \sum_{z} \sum_{t} P(c,t|z)P(z)P(n,l-t|z)
 
     Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
     by Paris Smaragdis and Bhiksha Raj (2007) for more details.
@@ -446,15 +446,15 @@ class SIPLCA(BaseComponent):
 class SIPLCA2(BaseComponent):
     r"""Shift Invariant Probabilistic Latent Component Analysis across 2 dimensions (SI-PLCA 2D).
 
-    Estimate two marginals :math:`P(v_{c,k_1,k_2}|z)` and :math:`P(v_{n,l,m}|z)`, 
+    Estimate two marginals :math:`P(c,k_1,k_2|z)` and :math:`P(n,l,m|z)`, 
     which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
-    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    that approximate the observed :math:`P(n,c,l,m)`, where :math:`P(n,c,l,m)` is obtained via ``V / V.sum()`` 
     so the total probabilities sum to 1.
 
     More precisely:
 
     .. math::
-        P(v_{n,c,l,m}) \approx \sum_{z} \sum_{k_1} \sum_{k_2} P(v_{c,k_1,k_2}|z)P(z)P(v_{n,l-k_1,m-k_2}|z)
+        P(n,c,l,m) \approx \sum_{z} \sum_{k_1} \sum_{k_2} P(c,k_1,k_2|z)P(z)P(n,l-k_1,m-k_2|z)
 
     Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
     by Paris Smaragdis and Bhiksha Raj (2007) for more details.
@@ -519,15 +519,15 @@ class SIPLCA2(BaseComponent):
 class SIPLCA3(BaseComponent):
     r"""Shift Invariant Probabilistic Latent Component Analysis across 3 dimensions (SI-PLCA 3D).
 
-    Estimate two marginals :math:`P(v_{c,k_1,k_2,k_3}|z)` and :math:`P(v_{n,l,m,o}|z)`, 
+    Estimate two marginals :math:`P(c,k_1,k_2,k_3|z)` and :math:`P(n,l,m,o|z)`, 
     which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
-    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    that approximate the observed :math:`P(n,c,l,m,o)`, where :math:`P(n,c,l,m,o)` is obtained via ``V / V.sum()`` 
     so the total probabilities sum to 1.
 
     More precisely:
 
     .. math::
-        P(v_{n,c,l,m,o}) \approx \sum_{z} \sum_{k_1} \sum_{k_2} \sum_{k_3} P(v_{c,k_1,k_2,k_3}|z)P(z)P(v_{n,l-k_1,m-k_2,o-k_3}|z)
+        P(n,c,l,m,o) \approx \sum_{z} \sum_{k_1} \sum_{k_2} \sum_{k_3} P(c,k_1,k_2,k_3|z)P(z)P(n,l-k_1,m-k_2,o-k_3|z)
 
     Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
     by Paris Smaragdis and Bhiksha Raj (2007) for more details.
@@ -570,6 +570,7 @@ class SIPLCA3(BaseComponent):
     .. _Shift-Invariant Probabilistic Latent Component Analysis:
         https://paris.cs.illinois.edu/pubs/plca-report.pdf
     """
+
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
