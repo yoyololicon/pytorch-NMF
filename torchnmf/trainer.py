@@ -15,10 +15,10 @@ class BetaMu(Optimizer):
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
         beta (float, optional): beta divergence to be minimized, measuring the distance between target and the NMF model.
-                        Default: ``1.``.
+                        Default: ``1.``
         l1_reg (float, optional): L1 regularize penalty. Default: ``0.``.
-        l2_reg (float, optional): L2 regularize penalty (weight decay). Default: ``0.``.
-        orthogonal (float, optional): Orthogonal regularize penalty. Default: ``0.``.
+        l2_reg (float, optional): L2 regularize penalty (weight decay). Default: ``0.``
+        orthogonal (float, optional): orthogonal regularize penalty. Default: ``0.``
     """
 
     def __init__(self, params, beta=1, l1_reg=0, l2_reg=0, orthogonal=0):
@@ -37,9 +37,9 @@ class BetaMu(Optimizer):
         """Performs a single update step.
 
         Arguments:
-            closure (callable): A closure that reevaluates the model
+            closure (callable): a closure that reevaluates the model
                 and returns the target and predicted Tensor in the form:
-                ``func()->Tuple(target,predict)``.
+                ``func()->Tuple(target,predict)``
         """
 
         # Make sure the closure is always called with grad enabled
@@ -130,9 +130,9 @@ class SparsityProj(Optimizer):
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
-        sparsity (float): the target sparseness for `params`, with 0 < sparsity < 1.
-        dim (int, optional): dimension over which to compute the sparseness for each parameter. Default: ``1``.
-        max_iter (int, optional): maximal number of function evaluations per optimization step. Default: ``10``.
+        sparsity (float): the target sparseness for `params`, with 0 < sparsity < 1
+        dim (int, optional): dimension over which to compute the sparseness for each parameter. Default: ``1``
+        max_iter (int, optional): maximal number of function evaluations per optimization step. Default: ``10``
     """
 
     def __init__(self, params, sparsity, dim=1, max_iter=10):
@@ -146,7 +146,7 @@ class SparsityProj(Optimizer):
         """Performs a single update step.
 
         Arguments:
-            closure (callable): A closure that reevaluates the model and returns the loss.
+            closure (callable): a closure that reevaluates the model and returns the loss
         """
         loss = None
 
