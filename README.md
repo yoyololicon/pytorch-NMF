@@ -26,10 +26,10 @@ The interface is similar to `sklearn.decomposition.NMF` with some extra options.
 * `NMF2D`: 2-D deconvolutional NMF algorithm. 
 * `NMF3D`: 3-D deconvolutional NMF algorithm. 
 
-## PLCA (not documented)
+## PLCA
 
 Basic PLCA and SIPLCA module using EM algorithm to minimize
-KL-divergence between the target distribution P(X) and the estimated
+KL-divergence between the target distribution and the estimated
 distribution.
 
 * `PLCA`: Original PLCA (Probabilistic Latent Component Analysis)
@@ -38,13 +38,7 @@ distribution.
 * `SIPLCA2`: 2-D deconvolutional SIPLCA algorithm.
 * `SIPLCA3`: 3-D deconvolutional SIPLCA algorithm.
 
----
-**NOTE**
 
-This module is currently not documented and still using the old function interface (before version 0.3).
-Will be updated and adopt in later version.
-
----
 
 ## Usage
 
@@ -59,7 +53,9 @@ from torchnmf.metrics import kl_div
 y, sr = librosa.load(librosa.util.example_audio_file())
 y = torch.from_numpy(y)
 windowsize = 2048
-S = torch.stft(y, windowsize, window=torch.hann_window(windowsize)).pow(2).sum(2).sqrt().cuda()
+S = torch.stft(y, windowsize, 
+               window=torch.hann_window(windowsize),
+               return_complex=True).abs().cuda()
 S = S.unsqueeze(0)
 
 R = 8   # number of components
@@ -84,7 +80,6 @@ different beta values, which can take advantage when beta is not 0, 1, or 2.
 This is because our implementation use the same computational graph regardless which beta-divergence are we minimizing.
 It runs even faster when computation is done on GPU. The test is conducted on a
 Acer E5 laptop with i5-7200U CPU and GTX 950M GPU.
-
 
 ![](tests/performance.png) 
 
