@@ -134,11 +134,11 @@ class BaseComponent(torch.nn.Module):
     Your models should also subclass this class.
 
     Args:
-        rank (int): Size of hidden dimension
-        W (tuple or Tensor): Size or initial weights of template tensor W
-        H (tuple or Tensor): Size or initial weights of activation tensor H
-        trainable_W (bool):  Controls whether template tensor W is trainable when initial weights is given. Default: ``True``
-        trainable_H (bool):  Controls whether activation tensor H is trainable when initial weights is given. Default: ``True``
+        rank (int): size of hidden dimension
+        W (tuple or Tensor): size or initial weights of template tensor W
+        H (tuple or Tensor): size or initial weights of activation tensor H
+        trainable_W (bool):  controls whether template tensor W is trainable when initial weights is given. Default: ``True``
+        trainable_H (bool):  controls whether activation tensor H is trainable when initial weights is given. Default: ``True``
 
     Attributes:
         W (Tensor or None): the template tensor of the module if corresponding argument is given.
@@ -222,12 +222,12 @@ class BaseComponent(torch.nn.Module):
 
         Args:
             H(Tensor, optional): input activation tensor H. If no tensor was given will use :attr:`H` from this module
-                                instead.
+                                instead
             W(Tensor, optional): input template tensor W. If no tensor was given will use :attr:`W` from this module
-                                instead.
+                                instead
 
         Returns:
-            tensor
+            Tensor: tensor
         """
         if H is None:
             H = self.H
@@ -258,21 +258,21 @@ class BaseComponent(torch.nn.Module):
         :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
         Args:
-            V (Tensor): data tensor to be decomposed.
+            V (Tensor): data tensor to be decomposed
             beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
-                        Default: ``1.``.
-            tol (float): tolerance of the stopping condition. Default: ``1e-4``.
-            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
-            verbose (bool): whether to be verbose. Default: ``False``.
-            alpha (float): constant that multiplies the regularization terms. Set it to zero to have no regularization.
-                            Default: ``0``.
+                        Default: ``1.``
+            tol (float): tolerance of the stopping condition. Default: ``1e-4``
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``
+            verbose (bool): whether to be verbose. Default: ``False``
+            alpha (float): constant that multiplies the regularization terms. Set it to zero to have no regularization
+                            Default: ``0``
             l1_ratio (float):  the regularization mixing parameter, with 0 <= l1_ratio <= 1.
                                 For l1_ratio = 0 the penalty is an elementwise L2 penalty (aka Frobenius Norm).
                                 For l1_ratio = 1 it is an elementwise L1 penalty.
-                                For 0 < l1_ratio < 1, the penalty is a combination of L1 and L2. Default: ``0``.
+                                For 0 < l1_ratio < 1, the penalty is a combination of L1 and L2. Default: ``0``
 
         Returns:
-            total number of iterations.
+            int: total number of iterations
         """
         assert torch.all(V >= 0.), "Target should be non-negative."
 
@@ -336,18 +336,18 @@ class BaseComponent(torch.nn.Module):
             https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
 
         Args:
-            V (Tensor): data tensor to be decomposed.
-            beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
-                        Default: ``1.``.
-            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
-            verbose (bool): whether to be verbose. Default: ``False``.
+            V (Tensor): data tensor to be decomposed
+            beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model
+                        Default: ``1.``
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``
+            verbose (bool): whether to be verbose. Default: ``False``
             sW (float or None): the target sparseness for template tensor :attr:`W` , with 0 < sW < 1. Set it to ``None``
                 will have no constraint. Default: ``None``
             sH (float or None): the target sparseness for activation tensor :attr:`H` , with 0 < sH < 1. Set it to ``None``
                 will have no constraint. Default: ``None``
 
         Returns:
-            total number of iterations.
+            int: total number of iterations
         """
         W = self.W
         H = self.H
@@ -449,18 +449,18 @@ class NMF(BaseComponent):
     r"""Non-Negative Matrix Factorization (NMF).
 
     Find two non-negative matrices (W, H) whose product approximates the non-
-    negative matrix V: :math:`V \approx HW^T`
+    negative matrix V: :math:`V \approx HW^T`.
 
     This factorization can be used for example for dimensionality reduction, source separation or topic extraction.
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target matrix V
-        rank (int, optional): Size of hidden dimension
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        Vshape (tuple, optional): size of target matrix V
+        rank (int, optional): size of hidden dimension
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`
 
 
     Shape:
@@ -524,13 +524,13 @@ class NMFD(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target matrix V
-        rank (int, optional): Size of hidden dimension
-        T (int, optional): Size of the convolving window
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        Vshape (tuple, optional): size of target matrix V
+        rank (int, optional): size of hidden dimension
+        T (int, optional): size of the convolving window
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`
 
 
     Shape:
@@ -603,13 +603,13 @@ class NMF2D(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target tensor V
-        rank (int, optional): Size of hidden dimension
-        kernel_size (int or tuple, optional): Size of the convolving kernel
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        Vshape (tuple, optional): size of target tensor V
+        rank (int, optional): size of hidden dimension
+        kernel_size (int or tuple, optional): size of the convolving kernel
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`
 
     Shape:
         - V: :math:`(N, C, L_{out}, M_{out})`
@@ -674,13 +674,13 @@ class NMF3D(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
-        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target tensor V
-        rank (int, optional): Size of hidden dimension
-        kernel_size (int or tuple, optional): Size of the convolving kernel
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        Vshape (tuple, optional): size of target tensor V
+        rank (int, optional): size of hidden dimension
+        kernel_size (int or tuple, optional): size of the convolving kernel
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`
 
 
     Shape:

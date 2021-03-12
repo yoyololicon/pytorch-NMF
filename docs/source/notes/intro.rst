@@ -76,7 +76,7 @@ can treat them just like any other PyTorch Module (ex: moving among different de
 Model Concatenation
 ---------------------
 
-Started at version 0.3, you can now combine different NMF module into a single module, and train it in a end-to-end fashion.
+Started at version 0.3, you can now combine different NMF module into a single module, and train it in an end-to-end fashion.
 
 Let's use the previous example again. Instead of factorize matrix :obj:`V` into 2 matrix, we factorize it into 4 matrix.
 That is:

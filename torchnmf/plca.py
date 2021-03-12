@@ -38,13 +38,13 @@ class BaseComponent(torch.nn.Module):
     Your models should also subclass this class.
 
     Args:
-        rank (int): Size of hidden dimension
-        W (tuple or Tensor): Size or initial probabilities of template tensor W
-        H (tuple or Tensor): Size or initial probabilities of activation tensor H
-        Z (Tensor): Initial probabilities of latent vector Z
-        trainable_W (bool):  Controls whether template tensor W is trainable when initial probabilities is given. Default: ``True``
-        trainable_H (bool):  Controls whether activation tensor H is trainable when initial probabilities is given. Default: ``True``
-        trainable_Z (bool):  Controls whether latent vector Z is trainable when initial probabilities is given. Default: ``True``
+        rank (int): size of hidden dimension
+        W (tuple or Tensor): size or initial probabilities of template tensor W
+        H (tuple or Tensor): size or initial probabilities of activation tensor H
+        Z (Tensor): initial probabilities of latent vector Z
+        trainable_W (bool):  controls whether template tensor W is trainable when initial probabilities is given. Default: ``True``
+        trainable_H (bool):  controls whether activation tensor H is trainable when initial probabilities is given. Default: ``True``
+        trainable_Z (bool):  controls whether latent vector Z is trainable when initial probabilities is given. Default: ``True``
 
 
     Attributes:
@@ -157,15 +157,15 @@ class BaseComponent(torch.nn.Module):
 
         Args:
             H(Tensor, optional): input activation tensor H. If no tensor was given will use :attr:`H` from this module
-                                instead.
+                                instead
             W(Tensor, optional): input template tensor W. If no tensor was given will use :attr:`W` from this module
-                                instead.
+                                instead
             Z(Tensor, optional): input latent vector Z. If no tensor was given will use :attr:`Z` from this module
-                                instead.
+                                instead
             norm(float, optional): a scaling value multiply on output before return. Default: ``1``
 
         Returns:
-            tensor
+            Tensor: tensor
         """
         if H is None:
             H = self.H
@@ -204,8 +204,8 @@ class BaseComponent(torch.nn.Module):
             + \sum_{f_1...f_M} (\alpha_{w,f_1...f_M} - 1) \log w_{f_1...f_M} \\
             + \sum_{\tau_1...\tau_L} (\alpha_{h,\tau_1...\tau_L} - 1) \log h_{\tau_1...\tau_L} \\
 
-        Where :math:`\hat{V}` is the reconstructed output, N is the number of dimensions of target tensor V,
-        M is the number of dimensions of tensor W, and L is the number of dimensions of tensor H.
+        Where :math:`\hat{V}` is the reconstructed output, N is the number of dimensions of target tensor :math:`V`,
+        M is the number of dimensions of tensor :math:`W`, and L is the number of dimensions of tensor :math:`H`.
         The last three terms come from Dirichlet prior assumption.
 
         To invoke this function, attributes :meth:`H <torchnmf.plca.BaseComponent.H>`,
@@ -213,21 +213,21 @@ class BaseComponent(torch.nn.Module):
         should be presented in this module.
 
         Args:
-            V (Tensor): data tensor to be decomposed.
-            tol (float): tolerance of the stopping condition. Default: ``1e-4``.
-            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
-            verbose (bool): whether to be verbose. Default: ``False``.
+            V (Tensor): data tensor to be decomposed
+            tol (float): tolerance of the stopping condition. Default: ``1e-4``
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``
+            verbose (bool): whether to be verbose. Default: ``False``
             W_alpha (float): hyper parameter of Dirichlet prior on W. 
                             Can be a scalar or a tensor that is broadcastable to W. 
-                            Set it to one to have no regularization. Default: ``1``.
+                            Set it to one to have no regularization. Default: ``1``
             H_alpha (float): hyper parameter of Dirichlet prior on H. 
                             Can be a scalar or a tensor that is broadcastable to H. 
-                            Set it to one to have no regularization. Default: ``1``.
+                            Set it to one to have no regularization. Default: ``1``
             Z_alpha (float): hyper parameter of Dirichlet prior on Z. 
                             Can be a scalar or a tensor that is broadcastable to Z. 
-                            Set it to one to have no regularization. Default: ``1``.
+                            Set it to one to have no regularization. Default: ``1``
         Returns:
-            a tuple with first element is total number of iterations, and the second is the sum of tensor V.
+            tuple: a length-2 tuple with first element is total number of iterations, and the second is the sum of tensor V
         """
 
         assert torch.all(V >= 0.), "Target should be non-negative."
@@ -322,12 +322,12 @@ class PLCA(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
-        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target matrix V
-        rank (int, optional): Size of hidden dimension
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        Vshape (tuple, optional): size of target matrix V
+        rank (int, optional): size of hidden dimension
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`
 
 
     Shape:
@@ -389,13 +389,13 @@ class SIPLCA(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
-        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target matrix V
-        rank (int, optional): Size of hidden dimension
-        T (int, optional): Size of the convolving window
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        Vshape (tuple, optional): size of target matrix V
+        rank (int, optional): size of hidden dimension
+        T (int, optional): size of the convolving window
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`
 
 
     Shape:
@@ -461,13 +461,13 @@ class SIPLCA2(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
-        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target tensor V
-        rank (int, optional): Size of hidden dimension
-        kernel_size (int or tuple, optional): Size of the convolving kernel
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        Vshape (tuple, optional): size of target tensor V
+        rank (int, optional): size of hidden dimension
+        kernel_size (int or tuple, optional): size of the convolving kernel
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`
 
     Shape:
         - V: :math:`(N, C, L_{out}, M_{out})`
@@ -534,13 +534,13 @@ class SIPLCA3(BaseComponent):
 
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
-        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
     Args:
-        Vshape (tuple, optional): Size of target tensor V
-        rank (int, optional): Size of hidden dimension
-        kernel_size (int or tuple, optional): Size of the convolving kernel
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+        Vshape (tuple, optional): size of target tensor V
+        rank (int, optional): size of hidden dimension
+        kernel_size (int or tuple, optional): size of the convolving kernel
+        **kwargs: arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`
 
 
     Shape:
