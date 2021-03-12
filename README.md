@@ -67,10 +67,10 @@ net.fit(S)      # fit to target matrix S
 V = net()
 print(kl_div(V, S))        # KL divergence to S
 ```
-A more detailed version can be found [here](tests/librosa_example.py). 
+A more detailed version can be found [here](examples/librosa_example.py). 
 See our [documentation](https://pytorch-nmf.readthedocs.io/en/latest/) to find out more usage of this package.
 
-![](tests/librosa_example.png)
+![](examples/librosa_example.png)
 
 ## Compare to sklearn
 
@@ -81,7 +81,7 @@ This is because our implementation use the same computational graph regardless w
 It runs even faster when computation is done on GPU. The test is conducted on a
 Acer E5 laptop with i5-7200U CPU and GTX 950M GPU.
 
-![](tests/performance.png) 
+![](examples/performance.png) 
 
 ## Installation
 
