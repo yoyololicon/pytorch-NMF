@@ -255,7 +255,7 @@ class BaseComponent(torch.nn.Module):
         r"""Learn a NMF model for the data V by minimizing beta divergence.
 
         To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`W <torchnmf.nmf.BaseComponent.H>` should be presented in this module.
+        :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
         Args:
             V (Tensor): data tensor to be decomposed.
@@ -330,7 +330,7 @@ class BaseComponent(torch.nn.Module):
         `Non-negative Matrix Factorization with Sparseness Constraints`_.
 
         To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
-        :meth:`W <torchnmf.nmf.BaseComponent.H>` should be presented in this module.
+        :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
         .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
             https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
@@ -449,16 +449,12 @@ class NMF(BaseComponent):
     r"""Non-Negative Matrix Factorization (NMF).
 
     Find two non-negative matrices (W, H) whose product approximates the non-
-    negative matrix V: :math:`V \approx WH`
+    negative matrix V: :math:`V \approx HW^T`
 
     This factorization can be used for example for dimensionality reduction, source separation or topic extraction.
 
     Note:
-        To match with PyTorch convention, this class actually use :math:`H^T` so the batch dimension is the first
-        dimension, and require input target matrix V is also transposed.
-
-    Note:
-        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
@@ -475,8 +471,8 @@ class NMF(BaseComponent):
 
     Examples::
 
-        >>> V = torch.rand(30, 20)
-        >>> m = NMF(V.t().shape, 5)
+        >>> V = torch.rand(20, 30)
+        >>> m = NMF(V.shape, 5)
         >>> m.W.size()
         torch.Size([30, 5])
         >>> m.H.size()
@@ -527,7 +523,7 @@ class NMFD(BaseComponent):
         To match with PyTorch convention, an extra batch dimension is required for target matrix V.
 
     Note:
-        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
@@ -606,7 +602,7 @@ class NMF2D(BaseComponent):
         To match with PyTorch convention, an extra batch dimension is required for target tensor V.
 
     Note:
-        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:
@@ -677,7 +673,7 @@ class NMF3D(BaseComponent):
         To match with PyTorch convention, an extra batch dimension is required for target tensor V.
 
     Note:
-        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.H>` and
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
     Args:

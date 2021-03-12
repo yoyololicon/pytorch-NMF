@@ -208,8 +208,8 @@ class BaseComponent(torch.nn.Module):
         M is the number of dimensions of tensor W, and L is the number of dimensions of tensor H.
         The last three terms come from Dirichlet prior assumption.
 
-        To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>`,
-        :meth:`W <torchnmf.nmf.BaseComponent.H>` and :meth:`Z <torchnmf.nmf.BaseComponent.Z>`
+        To invoke this function, attributes :meth:`H <torchnmf.plca.BaseComponent.H>`,
+        :meth:`W <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`
         should be presented in this module.
 
         Args:
@@ -304,16 +304,14 @@ class BaseComponent(torch.nn.Module):
 class PLCA(BaseComponent):
     r"""Probabilistic Latent Component Analysis (PLCA).
 
-    Estimate two marginals :math:`P(v_i|z)` and :math:`P(v_j|z)`, which is the matrix W and H, 
+    Estimate two marginals :math:`P(v_c|z)` and :math:`P(v_n|z)`, which is the matrix W and H, 
     and a prior :math:`P(z)` which is the vector Z, that approximate the observed :math:`P(V)`,
-    where :math:`P(V)` is treated as ``V / V.sum()``.
+    where :math:`P(V)` is obtained via ``V / V.sum()`` so the total probabilities sum to 1.
 
     More precisely:
 
     .. math::
-        P(V_{i,j}) \approx \sum_{z}P(v_i|z)P(z)P(v_j|z)
-
-    Here i is indexing the first dimension of W and second dimension of V, and j is indexing the first dimension of both H and V.
+        P(v_{n, c}) \approx \sum_{z}P(v_c|z)P(z)P(v_n|z)
 
     In matrix form:
 
@@ -323,13 +321,13 @@ class PLCA(BaseComponent):
     Its formulation is very similar to NMF, but introduce an extra latent vector to incorporate probabilities concept.
 
     Note:
-        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>`,
-        :meth:`H <torchnmf.nmf.BaseComponent.H>` and :meth:`Z <torchnmf.nmf.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
     Args:
         Vshape (tuple, optional): Size of target matrix V
         rank (int, optional): Size of hidden dimension
-        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
 
 
     Shape:
@@ -349,8 +347,8 @@ class PLCA(BaseComponent):
         torch.Size([20, 5])
         >>> m.Z.size()
         torch.Size([5])
-        >>> WHt = m()
-        >>> WHt.size()
+        >>> HZWt = m()
+        >>> HZWt.size()
         torch.Size([20, 30])
 
     """
@@ -373,6 +371,57 @@ class PLCA(BaseComponent):
 
 
 class SIPLCA(BaseComponent):
+    r"""Shift Invariant Probabilistic Latent Component Analysis (SI-PLCA).
+
+    Estimate two marginals :math:`P(v_{c,t}|z)` and :math:`P(v_{n,l}|z)`, 
+    which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
+    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    so the total probabilities sum to 1.
+
+    More precisely:
+
+    .. math::
+        P(v_{n, c, l}) \approx \sum_{z} \sum_{t} P(v_{c,t}|z)P(z)P(v_{n,l-t}|z)
+
+    Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
+    by Paris Smaragdis and Bhiksha Raj (2007) for more details.
+
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+    Args:
+        Vshape (tuple, optional): Size of target matrix V
+        rank (int, optional): Size of hidden dimension
+        T (int, optional): Size of the convolving window
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C, L_{out})`
+        - W: :math:`(C, R, T)`
+        - H: :math:`(N, R, L_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - T + 1
+
+    Examples::
+
+        >>> V = torch.rand(33, 50).unsqueeze(0)
+        >>> m = SIPLCA(V.shape, 16, 3)
+        >>> m.W.size()
+        torch.Size([33, 16, 3])
+        >>> m.H.size()
+        torch.Size([1, 16, 48])
+        >>> HZWt = m()
+        >>> HZWt.size()
+        torch.Size([1, 33, 50])
+
+    .. _Shift-Invariant Probabilistic Latent Component Analysis:
+        https://paris.cs.illinois.edu/pubs/plca-report.pdf
+
+    """
 
     def __init__(self,
                  Vshape: Iterable[int] = None,
@@ -395,6 +444,56 @@ class SIPLCA(BaseComponent):
 
 
 class SIPLCA2(BaseComponent):
+    r"""Shift Invariant Probabilistic Latent Component Analysis across 2 dimensions (SI-PLCA 2D).
+
+    Estimate two marginals :math:`P(v_{c,k_1,k_2}|z)` and :math:`P(v_{n,l,m}|z)`, 
+    which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
+    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    so the total probabilities sum to 1.
+
+    More precisely:
+
+    .. math::
+        P(v_{n,c,l,m}) \approx \sum_{z} \sum_{k_1} \sum_{k_2} P(v_{c,k_1,k_2}|z)P(z)P(v_{n,l-k_1,m-k_2}|z)
+
+    Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
+    by Paris Smaragdis and Bhiksha Raj (2007) for more details.
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+    Args:
+        Vshape (tuple, optional): Size of target tensor V
+        rank (int, optional): Size of hidden dimension
+        kernel_size (int or tuple, optional): Size of the convolving kernel
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+    Shape:
+        - V: :math:`(N, C, L_{out}, M_{out})`
+        - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1])`
+        - H: :math:`(N, R, L_{in}, M_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - \text{kernel_size}[0] + 1
+        .. math::
+            M_{in} = M_{out} - \text{kernel_size}[1] + 1
+
+    Examples::
+
+        >>> V = torch.rand(33, 50).unsqueeze(0).unsqueeze(0)
+        >>> m = SIPLCA2(V.shape, 16, 3)
+        >>> m.W.size()
+        torch.Size([1, 16, 3, 3])
+        >>> m.H.size()
+        torch.Size([1, 16, 31, 48])
+        >>> HZWt = m()
+        >>> HZWt.size()
+        torch.Size([1, 1, 33, 50])
+
+    .. _Shift-Invariant Probabilistic Latent Component Analysis:
+        https://paris.cs.illinois.edu/pubs/plca-report.pdf
+    """
 
     def __init__(self,
                  Vshape: Iterable[int] = None,
@@ -418,6 +517,59 @@ class SIPLCA2(BaseComponent):
 
 
 class SIPLCA3(BaseComponent):
+    r"""Shift Invariant Probabilistic Latent Component Analysis across 3 dimensions (SI-PLCA 3D).
+
+    Estimate two marginals :math:`P(v_{c,k_1,k_2,k_3}|z)` and :math:`P(v_{n,l,m,o}|z)`, 
+    which is the tensor W and H, and a prior :math:`P(z)` which is the vector Z, 
+    that approximate the observed :math:`P(V)`, where :math:`P(V)` is obtained via ``V / V.sum()`` 
+    so the total probabilities sum to 1.
+
+    More precisely:
+
+    .. math::
+        P(v_{n,c,l,m,o}) \approx \sum_{z} \sum_{k_1} \sum_{k_2} \sum_{k_3} P(v_{c,k_1,k_2,k_3}|z)P(z)P(v_{n,l-k_1,m-k_2,o-k_3}|z)
+
+    Look at the paper: `Shift-Invariant Probabilistic Latent Component Analysis`_
+    by Paris Smaragdis and Bhiksha Raj (2007) for more details.
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.plca.BaseComponent.W>`,
+        :meth:`H <torchnmf.plca.BaseComponent.H>` and :meth:`Z <torchnmf.plca.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+    Args:
+        Vshape (tuple, optional): Size of target tensor V
+        rank (int, optional): Size of hidden dimension
+        kernel_size (int or tuple, optional): Size of the convolving kernel
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.plca.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C, L_{out}, M_{out}, O_{out})`
+        - W: :math:`(C, R, \text{kernel_size}[0], \text{kernel_size}[1], \text{kernel_size}[2])`
+        - H: :math:`(N, R, L_{in}, M_{in}, O_{in})` where
+
+        .. math::
+            L_{in} = L_{out} - \text{kernel_size}[0] + 1
+        .. math::
+            M_{in} = M_{out} - \text{kernel_size}[1] + 1
+        .. math::
+            O_{in} = O_{out} - \text{kernel_size}[2] + 1
+
+    Examples::
+
+        >>> V = torch.rand(3, 64, 64, 100).unsqueeze(0)
+        >>> m = SIPLCA3(V.shape, 8, (5, 5, 20))
+        >>> m.W.size()
+        torch.Size([3, 8, 5, 5, 20])
+        >>> m.H.size()
+        torch.Size([1, 8, 60, 60, 81])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([1, 3, 64, 64, 100])
+
+    .. _Shift-Invariant Probabilistic Latent Component Analysis:
+        https://paris.cs.illinois.edu/pubs/plca-report.pdf
+    """
     def __init__(self,
                  Vshape: Iterable[int] = None,
                  rank: int = None,
