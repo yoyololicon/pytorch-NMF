@@ -254,7 +254,7 @@ class BaseComponent(torch.nn.Module):
                     Z_prior = Z.clone()
                     if Z_alpha != 1:
                         Z.data.add_(Z_alpha - 1).relu_()
-                    Z.data.div_(get_norm(Z))
+                    Z.data.div_(Z.sum())
 
                 if W.requires_grad:
                     W.data.mul_(W.grad.relu())
@@ -267,7 +267,7 @@ class BaseComponent(torch.nn.Module):
                     W.data.div_(W_divider)
                     if W_alpha != 1:
                         W.data.add_(W_alpha - 1).relu_()
-                    W.data.div_(get_norm(W))
+                        W.data.div_(get_norm(W))
 
                 if H.requires_grad:
                     H.data.mul_(H.grad.relu())
@@ -279,7 +279,7 @@ class BaseComponent(torch.nn.Module):
                     W.data.div_(H_divider)
                     if H_alpha != 1:
                         H.data.add_(H_alpha - 1).relu_()
-                    H.data.div_(get_norm(H))
+                        H.data.div_(get_norm(H))
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
