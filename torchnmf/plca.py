@@ -251,7 +251,10 @@ class BaseComponent(torch.nn.Module):
                 Z_prior = None
                 if Z.requires_grad:
                     Z.data.mul_(Z.grad.relu())
-                    Z_prior = Z.detach()
+                    Z_prior = Z.clone()
+                    if Z_alpha != 1:
+                        Z.data.add_(Z_alpha - 1).relu_()
+                    Z.data.div_(get_norm(Z))
 
                 if W.requires_grad:
                     W.data.mul_(W.grad.relu())
@@ -262,6 +265,9 @@ class BaseComponent(torch.nn.Module):
                         W_divider = Z_prior[(
                             slice(None),) + (None,) * (W.dim() - 2)]
                     W.data.div_(W_divider)
+                    if W_alpha != 1:
+                        W.data.add_(W_alpha - 1).relu_()
+                    W.data.div_(get_norm(W))
 
                 if H.requires_grad:
                     H.data.mul_(H.grad.relu())
@@ -271,19 +277,8 @@ class BaseComponent(torch.nn.Module):
                         H_divider = Z_prior[(
                             slice(None),) + (None,) * (H.dim() - 2)]
                     W.data.div_(H_divider)
-
-                if Z_alpha != 1:
-                    Z.data.add_(Z_alpha - 1).relu_()
-                if W_alpha != 1:
-                    W.data.add_(W_alpha - 1).relu_()
-                if H_alpha != 1:
-                    H.data.add_(H_alpha - 1).relu_()
-
-                if Z.requires_grad:
-                    Z.data.div_(get_norm(Z))
-                if W.requires_grad:
-                    W.data.div_(get_norm(W))
-                if H.requires_grad:
+                    if H_alpha != 1:
+                        H.data.add_(H_alpha - 1).relu_()
                     H.data.div_(get_norm(H))
 
                 if n_iter % 10 == 9:
