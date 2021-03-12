@@ -114,4 +114,4 @@ torch.set_flush_denormal(True)`.
 - [x] PLCA.
 - [x] Documentation.
 - [ ] ipynb examples.
-- [ ] Refactor PLCA module.
+- [x] Refactor PLCA module.

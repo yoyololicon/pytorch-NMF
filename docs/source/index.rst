@@ -23,6 +23,7 @@ into more complex NMF structures, and make it possible to train these complex mo
    :caption: Package Reference
 
    modules/nmf
+   modules/plca
    modules/metrics
    modules/trainer
 
