@@ -16,8 +16,8 @@ __all__ = [
 
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
-    return V.view(-1) @ WZH.log().view(-1) + W.log().sum().mul(W_alpha - 1) + H.log().sum().mul(
-        H_alpha - 1) + Z.log().sum().mul(Z_alpha - 1)
+    return V.view(-1) @ WZH.log().view(-1) + W.log().mul(W_alpha - 1).sum() + H.log().mul(
+        H_alpha - 1).sum() + Z.log().mul(Z_alpha - 1).sum()
 
 
 @torch.no_grad()
@@ -192,9 +192,9 @@ class BaseComponent(torch.nn.Module):
             tol: float = 1e-4,
             max_iter: int = 200,
             verbose: bool = False,
-            W_alpha: Union[float, Tensor] = 1,
-            H_alpha: Union[float, Tensor] = 1,
-            Z_alpha: Union[float, Tensor] = 1):
+            W_alpha: Union[float, Tensor] = 1.,
+            H_alpha: Union[float, Tensor] = 1.,
+            Z_alpha: Union[float, Tensor] = 1.):
         r"""Learn a PLCA model for the data V by maximizing the following log probability of V 
         and model params :math:`\theta` using EM algorithm:
 
@@ -302,6 +302,58 @@ class BaseComponent(torch.nn.Module):
 
 
 class PLCA(BaseComponent):
+    r"""Probabilistic Latent Component Analysis (PLCA).
+
+    Estimate two marginals :math:`P(v_i|z)` and :math:`P(v_j|z)`, which is the matrix W and H, 
+    and a prior :math:`P(z)` which is the vector Z, that approximate the observed :math:`P(V)`,
+    where :math:`P(V)` is treated as ``V / V.sum()``.
+
+    More precisely:
+
+    .. math::
+        P(V_{i,j}) \approx \sum_{z}P(v_i|z)P(z)P(v_j|z)
+
+    Here i is indexing the first dimension of W and second dimension of V, and j is indexing the first dimension of both H and V.
+
+    In matrix form:
+
+    .. math::
+        V \approx H diag(Z) W^T
+
+    Its formulation is very similar to NMF, but introduce an extra latent vector to incorporate probabilities concept.
+
+    Note:
+        If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>`,
+        :meth:`H <torchnmf.nmf.BaseComponent.H>` and :meth:`Z <torchnmf.nmf.BaseComponent.Z>`, and override arguments that pass to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+    Args:
+        Vshape (tuple, optional): Size of target matrix V
+        rank (int, optional): Size of hidden dimension
+        **kwargs: Arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+
+    Shape:
+        - V: :math:`(N, C)`
+        - W: :math:`(C, R)`
+        - H: :math:`(N, R)`
+        - Z: :math:`(R,)`
+
+
+    Examples::
+
+        >>> V = torch.rand(20, 30)
+        >>> m = PLCA(V.shape, 5)
+        >>> m.W.size()
+        torch.Size([30, 5])
+        >>> m.H.size()
+        torch.Size([20, 5])
+        >>> m.Z.size()
+        torch.Size([5])
+        >>> WHt = m()
+        >>> WHt.size()
+        torch.Size([20, 30])
+
+    """
 
     def __init__(self,
                  Vshape: Iterable[int] = None,
