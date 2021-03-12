@@ -142,9 +142,9 @@ class BaseComponent(torch.nn.Module):
 
     Attributes:
         W (Tensor or None): the template tensor of the module if corresponding argument is given.
-            If Size is given, values are initialized non-negatively.
+            If size is given, values are initialized non-negatively.
         H (Tensor or None): the activation tensor of the module if corresponding argument is given.
-            If Size is given, values are initialized non-negatively.
+            If size is given, values are initialized non-negatively.
 
        """
     __constants__ = ['rank']

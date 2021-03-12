@@ -32,23 +32,28 @@ def get_norm(x: Tensor):
 
 
 class BaseComponent(torch.nn.Module):
-    r"""Base class for all NMF modules.
+    r"""Base class for all PLCA modules.
 
     You can't use this module directly.
     Your models should also subclass this class.
 
     Args:
         rank (int): Size of hidden dimension
-        W (tuple or Tensor): Size or initial weights of template tensor W
-        H (tuple or Tensor): Size or initial weights of activation tensor H
-        trainable_W (bool):  If ``True``, the template tensor W is learnable. Default: ``True``
-        trainable_H (bool):  If ``True``, the activation tensor H is learnable. Default: ``True``
+        W (tuple or Tensor): Size or initial probabilities of template tensor W
+        H (tuple or Tensor): Size or initial probabilities of activation tensor H
+        Z (Tensor): Initial probabilities of latent vector Z
+        trainable_W (bool):  Controls whether template tensor W is trainable when initial probabilities is given. Default: ``True``
+        trainable_H (bool):  Controls whether activation tensor H is trainable when initial probabilities is given. Default: ``True``
+        trainable_Z (bool):  Controls whether latent vector Z is trainable when initial probabilities is given. Default: ``True``
+
 
     Attributes:
         W (Tensor or None): the template tensor of the module if corresponding argument is given.
-            The values are initialized non-negatively.
+            If size is given, values are initialized randomly.
         H (Tensor or None): the activation tensor of the module if corresponding argument is given.
-            The values are initialized non-negatively.
+            If size is given, values are initialized randomly.
+        Z (Tensor or None): the latent vector of the module if corresponding argument or rank is given.
+            If rank is given, values are initialized uniformly.
 
        """
     __constants__ = ['rank']
@@ -143,6 +148,25 @@ class BaseComponent(torch.nn.Module):
         return s.format(**self.__dict__)
 
     def forward(self, H: Tensor = None, W: Tensor = None, Z: Tensor = None, norm: float = None) -> Tensor:
+        r"""An outer wrapper of :meth:`self.reconstruct(H,W,Z) <torchnmf.plca.BaseComponent.reconstruct>`.
+
+        .. note::
+                Should call the :class:`BaseComponent` instance afterwards
+                instead of this since the former takes care of running the
+                registered hooks while the latter silently ignores them.
+
+        Args:
+            H(Tensor, optional): input activation tensor H. If no tensor was given will use :attr:`H` from this module
+                                instead.
+            W(Tensor, optional): input template tensor W. If no tensor was given will use :attr:`W` from this module
+                                instead.
+            Z(Tensor, optional): input latent vector Z. If no tensor was given will use :attr:`Z` from this module
+                                instead.
+            norm(float, optional): a scaling value multiply on output before return. Default: ``1``
+
+        Returns:
+            tensor
+        """
         if H is None:
             H = self.H
         if W is None:
@@ -168,9 +192,43 @@ class BaseComponent(torch.nn.Module):
             tol: float = 1e-4,
             max_iter: int = 200,
             verbose: bool = False,
-            W_alpha: float = 1,
-            H_alpha: float = 1,
-            Z_alpha: float = 1):
+            W_alpha: Union[float, Tensor] = 1,
+            H_alpha: Union[float, Tensor] = 1,
+            Z_alpha: Union[float, Tensor] = 1):
+        r"""Learn a PLCA model for the data V by maximizing the following log probability of V 
+        and model params :math:`\theta` using EM algorithm:
+
+        .. math::
+            \mathcal{L} (\theta)= \sum_{k_1...k_N} v_{k_1...k_N}\log{\hat{v}_{k_1...k_N}} \\
+            + \sum_k (\alpha_{z,k} - 1) \log z_k  \\
+            + \sum_{f_1...f_M} (\alpha_{w,f_1...f_M} - 1) \log w_{f_1...f_M} \\
+            + \sum_{\tau_1...\tau_L} (\alpha_{h,\tau_1...\tau_L} - 1) \log h_{\tau_1...\tau_L} \\
+
+        Where :math:`\hat{V}` is the reconstructed output, N is the number of dimensions of target tensor V,
+        M is the number of dimensions of tensor W, and L is the number of dimensions of tensor H.
+        The last three terms come from Dirichlet prior assumption.
+
+        To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>`,
+        :meth:`W <torchnmf.nmf.BaseComponent.H>` and :meth:`Z <torchnmf.nmf.BaseComponent.Z>`
+        should be presented in this module.
+
+        Args:
+            V (Tensor): data tensor to be decomposed.
+            tol (float): tolerance of the stopping condition. Default: ``1e-4``.
+            max_iter (int): maximum number of iterations before timing out. Default: ``200``.
+            verbose (bool): whether to be verbose. Default: ``False``.
+            W_alpha (float): hyper parameter of Dirichlet prior on W. 
+                            Can be a scalar or a tensor that is broadcastable to W. 
+                            Set it to one to have no regularization. Default: ``1``.
+            H_alpha (float): hyper parameter of Dirichlet prior on H. 
+                            Can be a scalar or a tensor that is broadcastable to H. 
+                            Set it to one to have no regularization. Default: ``1``.
+            Z_alpha (float): hyper parameter of Dirichlet prior on Z. 
+                            Can be a scalar or a tensor that is broadcastable to Z. 
+                            Set it to one to have no regularization. Default: ``1``.
+        Returns:
+            a tuple with first element is total number of iterations, and the second is the sum of tensor V.
+        """
 
         assert torch.all(V >= 0.), "Target should be non-negative."
         W = self.W
