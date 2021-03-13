@@ -83,9 +83,23 @@ def beta_div(input, target, beta=2):
     elif beta == 0:
         return is_div(input, target)
     else:
+        input = input.reshape(-1)
+        target = target.reshape(-1)
+
         bminus = beta - 1
-        return (target.pow(beta).sum() + bminus * input.pow(beta).sum() - beta * (
-                target * input.pow(bminus)).sum()) / (beta * bminus)
+        term_1 = target.pow(beta)
+        term_1 = term_1[~term_1.isinf()].sum()
+        term_2 = input.pow(beta)
+        term_2 = term_2[~term_2.isinf()].sum()
+
+        term_3_nonzero_mask, = target.nonzero(as_tuple=True)
+        term_3_target, term_3_input = target[term_3_nonzero_mask], input[term_3_nonzero_mask]
+        term_3_input = term_3_input.pow(bminus)
+        term_3_mask = ~term_3_input.isinf()
+        term_3 = term_3_target[term_3_mask] @ term_3_input[term_3_mask]
+
+        loss = term_1 + bminus * term_2 - beta * term_3
+        return loss / (beta * bminus)
 
 
 def sparseness(x: Tensor) -> Tensor:
