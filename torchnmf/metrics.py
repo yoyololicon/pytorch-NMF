@@ -20,7 +20,7 @@ def kl_div(input: Tensor, target: Tensor) -> Tensor:
     Returns:
         Tensor: single element tensor
     """
-    return F.kl_div(input.add(eps).log(), target, reduction='sum') - target.sum() + input.sum()
+    return target.reshape(-1) @ (target.add(eps).log() - input.add(eps).log()).reshape(-1) - target.sum() + input.sum()
 
 
 def euclidean(input: Tensor, target: Tensor) -> Tensor:
