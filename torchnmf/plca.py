@@ -16,8 +16,8 @@ __all__ = [
 
 
 def _log_probability(V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha):
-    return V.view(-1) @ WZH.log().view(-1) + W.log().mul(W_alpha - 1).sum() + H.log().mul(
-        H_alpha - 1).sum() + Z.log().mul(Z_alpha - 1).sum()
+    return V.view(-1) @ WZH.add(eps).log().view(-1) + W.add(eps).log().mul(W_alpha - 1).sum() + H.add(eps).log().mul(
+        H_alpha - 1).sum() + Z.add(eps).log().mul(Z_alpha - 1).sum()
 
 
 @torch.no_grad()
@@ -235,8 +235,8 @@ class BaseComponent(torch.nn.Module):
         H = self.H
         Z = self.Z
 
-        norm = get_norm(V)
-        V = V / norm
+        norm = V.sum()
+        V = V.contiguous() / norm
 
         with torch.no_grad():
             WZH = self.reconstruct(H, W, Z)
@@ -253,7 +253,8 @@ class BaseComponent(torch.nn.Module):
                     Z.data.mul_(Z.grad.relu())
                     Z_prior = Z.clone()
                     if Z_alpha != 1:
-                        Z.data.add_(Z_alpha - 1).relu_()
+                        Z.data.add_(Z_alpha - 1)
+                        F.threshold(Z.data, eps, eps, True)
                     Z.data.div_(Z.sum())
 
                 if W.requires_grad:
@@ -266,7 +267,8 @@ class BaseComponent(torch.nn.Module):
                             slice(None),) + (None,) * (W.dim() - 2)]
                     W.data.div_(W_divider)
                     if W_alpha != 1:
-                        W.data.add_(W_alpha - 1).relu_()
+                        W.data.add_(W_alpha - 1)
+                        F.threshold(W.data, eps, eps, True)
                         W.data.div_(get_norm(W))
 
                 if H.requires_grad:
@@ -278,7 +280,8 @@ class BaseComponent(torch.nn.Module):
                             slice(None),) + (None,) * (H.dim() - 2)]
                     H.data.div_(H_divider)
                     if H_alpha != 1:
-                        H.data.add_(H_alpha - 1).relu_()
+                        H.data.add_(H_alpha - 1)
+                        F.threshold(H.data, eps, eps, True)
                         H.data.div_(get_norm(H))
 
                 if n_iter % 10 == 9:
@@ -362,7 +365,7 @@ class PLCA(BaseComponent):
 
     @staticmethod
     def reconstruct(H, W, Z):
-        return torch.einsum("bi,ji,i->bj", H, W, Z)
+        return H @ (W * Z).T
 
 
 class SIPLCA(BaseComponent):
