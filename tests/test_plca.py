@@ -2,6 +2,7 @@ import pytest
 import torch
 import numpy as np
 from torch import nn
+import copy
 
 from torchnmf.plca import *
 
@@ -143,17 +144,37 @@ def test_siplca3_invalid_construct(Vshape):
 @pytest.mark.parametrize('H_alpha', [1, 0.999])
 @pytest.mark.parametrize('trainable_Z', [True, False])
 @pytest.mark.parametrize('trainable_W', [True, False])
+@pytest.mark.parametrize('trainable_H', [True, False])
 def test_fit(tol,
              verbose,
              W_alpha,
              H_alpha,
              Z_alpha,
              trainable_Z,
-             trainable_W):
+             trainable_W,
+             trainable_H):
+    if not trainable_Z and not trainable_H and not trainable_W:
+        return
+
     max_iter = 100
     V = torch.rand(100, 50)
     m = PLCA(None, 8, H=torch.rand(100, 8), W=torch.rand(50, 8), Z=torch.ones(8) /
-             8, trainable_Z=trainable_Z, trainable_W=trainable_W)
+             8, trainable_Z=trainable_Z, trainable_W=trainable_W, trainable_H=trainable_H)
+
+    assert m.Z.requires_grad == trainable_Z
+    assert m.W.requires_grad == trainable_W
+    assert m.H.requires_grad == trainable_H
+
+    m_copy = copy.deepcopy(m)
+
     n_iter, norm = m.fit(V, tol, max_iter, verbose, W_alpha, H_alpha, Z_alpha)
     assert n_iter <= max_iter
+
+    if not trainable_Z:
+        assert torch.allclose(m.Z, m_copy.Z)
+    if not trainable_W:
+        assert torch.allclose(m.W, m_copy.W)
+    if not trainable_H:
+        assert torch.allclose(m.H, m_copy.H)
+
     y = m(norm=norm)

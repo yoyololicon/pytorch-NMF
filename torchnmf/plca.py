@@ -276,7 +276,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         H_divider = Z_prior[(
                             slice(None),) + (None,) * (H.dim() - 2)]
-                    W.data.div_(H_divider)
+                    H.data.div_(H_divider)
                     if H_alpha != 1:
                         H.data.add_(H_alpha - 1).relu_()
                         H.data.div_(get_norm(H))
