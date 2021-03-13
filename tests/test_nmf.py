@@ -1,7 +1,6 @@
 import pytest
 import torch
-import numpy as np
-from torch import nn
+
 
 from torchnmf.nmf import *
 

@@ -14,13 +14,13 @@ def kl_div(input: Tensor, target: Tensor) -> Tensor:
         \ell(x, y) = \sum_{n = 0}^{N - 1} x_n log(\frac{x_n}{y_n}) - x_n + y_n
 
     Args:
-        input (Tensor): Tensor of arbitrary shape
-        target (Tensor): Tensor of the same shape as input
+        input (Tensor): tensor of arbitrary shape
+        target (Tensor): tensor of the same shape as input
 
     Returns:
-        Single element Tensor
+        Tensor: single element tensor
     """
-    return F.kl_div(input.add(eps).log(), target, reduction='sum') - target.sum() + input.sum()
+    return target.reshape(-1) @ (target.add(eps).log() - input.add(eps).log()).reshape(-1) - target.sum() + input.sum()
 
 
 def euclidean(input: Tensor, target: Tensor) -> Tensor:
@@ -31,11 +31,11 @@ def euclidean(input: Tensor, target: Tensor) -> Tensor:
         \ell(x, y) = \frac{1}{2} \sum_{n = 0}^{N - 1} (x_n - y_n)^2
 
     Args:
-        input (Tensor): Tensor of arbitrary shape
-        target (Tensor): Tensor of the same shape as input
+        input (Tensor): tensor of arbitrary shape
+        target (Tensor): tensor of the same shape as input
 
     Returns:
-        Single element Tensor
+        Tensor: single element tensor
     """
     return F.mse_loss(input, target, reduction='sum') * 0.5
 
@@ -48,11 +48,11 @@ def is_div(input: Tensor, target: Tensor) -> Tensor:
         \ell(x, y) = \sum_{n = 0}^{N - 1} \frac{x_n}{y_n} -  log(\frac{x_n}{y_n}) - 1
 
     Args:
-        input (Tensor): Tensor of arbitrary shape
-        target (Tensor): Tensor of the same shape as input
+        input (Tensor): tensor of arbitrary shape
+        target (Tensor): tensor of the same shape as input
 
     Returns:
-        Single element Tensor
+        Tensor: single element tensor
     """
     div = target.add(eps) / input.add(eps)
     return div.sum() - div.log().sum() - target.numel()
@@ -69,12 +69,12 @@ def beta_div(input, target, beta=2):
         \right ) y_n^{\beta} - \beta x_n y_n^{\beta-1}\right )
 
     Args:
-        input (Tensor): Tensor of arbitrary shape
-        target (Tensor): Tensor of the same shape as input
-        beta (float): A real value control the shape of loss function
+        input (Tensor): tensor of arbitrary shape
+        target (Tensor): tensor of the same shape as input
+        beta (float): a real value control the shape of loss function
 
     Returns:
-        Single element Tensor
+        Tensor: single element tensor
     """
     if beta == 2:
         return euclidean(input, target)
@@ -83,9 +83,23 @@ def beta_div(input, target, beta=2):
     elif beta == 0:
         return is_div(input, target)
     else:
+        input = input.reshape(-1)
+        target = target.reshape(-1)
+
         bminus = beta - 1
-        return (target.pow(beta).sum() + bminus * input.pow(beta).sum() - beta * (
-                target * input.pow(bminus)).sum()) / (beta * bminus)
+        term_1 = target.pow(beta)
+        term_1 = term_1[~term_1.isinf()].sum()
+        term_2 = input.pow(beta)
+        term_2 = term_2[~term_2.isinf()].sum()
+
+        term_3_nonzero_mask, = target.nonzero(as_tuple=True)
+        term_3_target, term_3_input = target[term_3_nonzero_mask], input[term_3_nonzero_mask]
+        term_3_input = term_3_input.pow(bminus)
+        term_3_mask = ~term_3_input.isinf()
+        term_3 = term_3_target[term_3_mask] @ term_3_input[term_3_mask]
+
+        loss = term_1 + bminus * term_2 - beta * term_3
+        return loss / (beta * bminus)
 
 
 def sparseness(x: Tensor) -> Tensor:
@@ -98,10 +112,10 @@ def sparseness(x: Tensor) -> Tensor:
 
 
     Args:
-        x (Tensor): Tensor of arbitrary shape
+        x (Tensor): tensor of arbitrary shape
 
     Returns:
-        Single element Tensor with value range between 0 (the most sparse) to 1 (the most dense).
+        Tensor: single element tensor with value range between 0 (the most sparse) to 1 (the most dense)
     """
     N = x.numel()
     return (N ** 0.5 - x.norm(1) / x.norm(2)) / (N ** 0.5 - 1)
