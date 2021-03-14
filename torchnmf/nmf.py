@@ -155,6 +155,18 @@ def _renorm(W: Tensor,
         raise ValueError("Input type isn't valid!")
 
 
+def _get_V_norm(V: Tensor, beta: float):
+    assert V.is_coalesced()
+    if beta == 2:
+        return V.values() @ V.values()
+    elif beta == 1:
+        return V.values() @ V.values().add(eps).log() - V.values().sum()
+    elif beta == 0:
+        return -V.numel() - V.values().add(eps).log().sum()
+    else:
+        return V.values().pow(beta).sum() / beta / (beta - 1)
+
+
 class BaseComponent(torch.nn.Module):
     r"""Base class for all NMF modules.
 
@@ -327,14 +339,7 @@ class BaseComponent(torch.nn.Module):
 
         if V.is_sparse:
             V = V.coalesce()
-            if beta == 2:
-                V_norm = V.values() @ V.values()
-            elif beta == 1:
-                V_norm = V.values() @ V.values().add(eps).log() - V.values().sum()
-            elif beta == 0:
-                V_norm = -V.numel() - V.values().add(eps).log().sum()
-            else:
-                V_norm = V.values().pow(beta).sum() / beta / (beta - 1)
+            V_norm = _get_V_norm(V, beta)
 
         with torch.no_grad():
             if V.is_sparse:
@@ -456,14 +461,7 @@ class BaseComponent(torch.nn.Module):
 
         if V.is_sparse:
             V = V.coalesce()
-            if beta == 2:
-                V_norm = V.values() @ V.values()
-            elif beta == 1:
-                V_norm = V.values() @ V.values().add(eps).log() - V.values().sum()
-            elif beta == 0:
-                V_norm = -V.numel() - V.values().add(eps).log().sum()
-            else:
-                V_norm = V.values().pow(beta).sum() / beta / (beta - 1)
+            V_norm = _get_V_norm(V, beta)
 
         stepsize_W, stepsize_H = 1, 1
         with tqdm(total=max_iter, disable=not verbose) as pbar:
