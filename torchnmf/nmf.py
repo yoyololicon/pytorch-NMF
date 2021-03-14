@@ -63,8 +63,9 @@ def _double_backward_update(V: Tensor,
         output_neg = V / WH.add(eps)
         output_pos = None
     elif beta == 0:
-        output_neg = V / (WH * WH).add(eps)
-        output_pos = 1 / WH.add(eps)
+        WH_eps = WH.add(eps)
+        output_neg = V / (WH_eps * WH_eps)
+        output_pos = 1 / WH_eps
     else:
         output_neg = WH.pow(beta - 2) * V
         output_pos = WH.pow(beta - 1)
@@ -270,12 +271,13 @@ class BaseComponent(torch.nn.Module):
             """
         raise NotImplementedError
 
-    def _sparse_reconstruct(H: Tensor, W: Tensor, indices: torch.LongTensor):
+    def _sparse_reconstruct(self, H: Tensor, W: Tensor, indices: torch.LongTensor):
         raise NotImplementedError
 
     def _sp_recon_beta_pos_neg(self, V, H, W, beta):
         raise NotImplementedError
 
+    @torch.jit.ignore
     def fit(self,
             V: Tensor,
             beta: float = 1,
@@ -307,8 +309,8 @@ class BaseComponent(torch.nn.Module):
         Returns:
             int: total number of iterations
         """
-
-        assert torch.all(V >= 0.), "Target should be non-negative."
+        assert torch.all((V._values() if V.is_sparse else V) >=
+                         0.), "Target should be non-negative."
 
         W = self.W
         H = self.H
@@ -328,7 +330,7 @@ class BaseComponent(torch.nn.Module):
             if beta == 2:
                 V_norm = V.values() @ V.values()
             elif beta == 1:
-                V_norm = V.values() @ V.values().ad(eps).log() - V.sum()
+                V_norm = V.values() @ V.values().add(eps).log() - V.values().sum()
             elif beta == 0:
                 V_norm = -V.numel() - V.values().add(eps).log().sum()
             else:
@@ -337,8 +339,7 @@ class BaseComponent(torch.nn.Module):
         with torch.no_grad():
             if V.is_sparse:
                 pos, neg = self._sp_recon_beta_pos_neg(V, H, W, beta)
-                loss_init = V_norm + \
-                    (neg - pos) if 0 < beta < 1 else (pos - neg)
+                loss_init = V_norm + pos - neg
             else:
                 WH = self.reconstruct(H, W)
                 loss_init = beta_div(WH, V, beta)
@@ -378,8 +379,7 @@ class BaseComponent(torch.nn.Module):
                         if V.is_sparse:
                             pos, neg = self._sp_recon_beta_pos_neg(
                                 V, H, W, beta)
-                            loss = V_norm + \
-                                (neg - pos) if 0 < beta < 1 else (pos - neg)
+                            loss = V_norm + pos - neg
                         else:
                             WH = self.reconstruct(H, W)
                             loss = beta_div(WH, V, beta)
@@ -392,6 +392,7 @@ class BaseComponent(torch.nn.Module):
 
         return n_iter + 1
 
+    @torch.jit.ignore
     def sparse_fit(self,
                    V,
                    beta=1,
@@ -458,7 +459,7 @@ class BaseComponent(torch.nn.Module):
             if beta == 2:
                 V_norm = V.values() @ V.values()
             elif beta == 1:
-                V_norm = V.values() @ V.values().ad(eps).log() - V.sum()
+                V_norm = V.values() @ V.values().add(eps).log() - V.values().sum()
             elif beta == 0:
                 V_norm = -V.numel() - V.values().add(eps).log().sum()
             else:
@@ -487,8 +488,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         W.grad = None
                         if V.is_sparse:
-                            loss = V_norm + \
-                                (neg - pos) if 0 < beta < 1 else (pos - neg)
+                            loss = V_norm + pos - neg
                         else:
                             loss = beta_div(WH, V, beta)
                         loss.backward()
@@ -502,8 +502,7 @@ class BaseComponent(torch.nn.Module):
                                 if V.is_sparse:
                                     new_pos, new_neg = self._sp_recon_beta_pos_neg(
                                         V, H, Wnew, beta)
-                                    new_loss = V_norm + \
-                                        (new_neg - new_pos) if 0 < beta < 1 else (new_pos - new_neg)
+                                    new_loss = V_norm + pos - neg
                                 else:
                                     new_loss = beta_div(self.reconstruct(H, Wnew),
                                                         V, beta)
@@ -536,8 +535,7 @@ class BaseComponent(torch.nn.Module):
                     else:
                         H.grad = None
                         if V.is_sparse:
-                            loss = V_norm + \
-                                (neg - pos) if 0 < beta < 1 else (pos - neg)
+                            loss = V_norm + pos - neg
                         else:
                             loss = beta_div(WH, V, beta)
                         loss.backward()
@@ -553,8 +551,7 @@ class BaseComponent(torch.nn.Module):
                                 if V.is_sparse:
                                     new_pos, new_neg = self._sp_recon_beta_pos_neg(
                                         V, Hnew, W, beta)
-                                    new_loss = V_norm + \
-                                        (new_neg - new_pos) if 0 < beta < 1 else (new_pos - new_neg)
+                                    new_loss = V_norm + pos - neg
                                 else:
                                     new_loss = beta_div(self.reconstruct(Hnew, W),
                                                         V, beta)
@@ -571,8 +568,7 @@ class BaseComponent(torch.nn.Module):
                         if V.is_sparse:
                             pos, neg = self._sp_recon_beta_pos_neg(
                                 V, H, W, beta)
-                            loss = V_norm + \
-                                (neg - pos) if 0 < beta < 1 else (pos - neg)
+                            loss = V_norm + pos - neg
                         else:
                             loss = beta_div(self.reconstruct(H, W),
                                             V, beta)
@@ -580,6 +576,51 @@ class BaseComponent(torch.nn.Module):
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
         return n_iter + 1
+
+
+@torch.jit.script
+def _nmf_sparse_reconstruct(H: Tensor, W: Tensor, indices: Tensor):
+    ii, jj = indices[0], indices[1]
+    n_vals = indices.shape[1]
+    dot_vals = []
+    rank = W.shape[1]
+    batch_size = max(rank, n_vals // rank)
+
+    dot_vals = torch.empty(n_vals, dtype=H.dtype, device=H.device)
+    for start in range(0, n_vals, batch_size):
+        batch = slice(start, start + batch_size)
+        dot_vals[batch] = (W[jj[batch], :] * H[ii[batch], :]).sum(1)
+
+    return dot_vals
+
+
+@torch.jit.script
+def _nmf_sp_recon_beta_pos_neg(V: Tensor, H: Tensor, W: Tensor, beta: float, eps: float):
+    V_idx = V.indices()
+    V_vals = V.values()
+    if beta == 2:
+        pos = torch.chain_matmul(H, W.T, W).view(-1) @ H.view(-1) * 0.5
+        neg = (V.t() @ H).view(-1) @ W.view(-1)
+        return pos, neg
+
+    WH_vals = _nmf_sparse_reconstruct(H, W, V_idx)
+
+    if beta == 1:
+        pos = W.sum(0) @ H.sum(0)
+        neg = V_vals @ WH_vals.add(eps).log()
+    elif beta == 0:
+        pos = (W @ H[0] + eps).log().sum()
+        for i in range(1, H.shape[0]):
+            pos += (W @ H[i] + eps).log().sum()
+        neg = -V_vals.div(WH_vals.add(eps)).sum()
+    else:
+        bminus = beta - 1
+        pos = (W @ H[0]).pow(beta).sum()
+        for i in range(1, H.shape[0]):
+            pos += (W @ H[i]).pow(beta).sum()
+        pos /= beta
+        neg = V_vals @ WH_vals.pow(bminus) / bminus
+    return pos, neg
 
 
 class NMF(BaseComponent):
@@ -636,51 +677,12 @@ class NMF(BaseComponent):
     def reconstruct(H, W):
         return F.linear(H, W)
 
-    def _sparse_reconstruct(H: Tensor, W: Tensor, indices: torch.LongTensor):
-        ii, jj = indices
-        n_vals = indices.shape[1]
-        dot_vals = []
-        rank = W.shape[1]
-        batch_size = max(rank, n_vals // rank)
-
-        for start in range(0, n_vals, batch_size):
-            batch = slice(start, start + batch_size)
-            dot_vals.append(
-                W[jj[batch], None, :] @ H[ii[batch], :, None]
-            )
-
-        dot_vals = torch.cat(dot_vals, 0).squeeze()
-        return dot_vals
+    def _sparse_reconstruct(self, H: Tensor, W: Tensor, indices: Tensor):
+        return _nmf_sparse_reconstruct(H, W, indices)
 
     def _sp_recon_beta_pos_neg(self, V, H, W, beta):
         assert V.is_sparse
-        V_idx = V.indices()
-        V_vals = V.values()
-        if beta == 2:
-            pos = (H @ (W.T @ W)).view(-1) @ H.view(-1)
-            neg = (V.T @ H).view(-1) @ W.view(-1)
-            return pos, neg
-
-        WH_vals = self._sparse_reconstruct(H, W, V_idx)
-
-        if beta == 1:
-            pos = W.sum(0) @ H.sum(0)
-            neg = V_vals @ WH_vals.add(eps).log()
-        elif beta == 0:
-            pos = (W @ H[0] + eps).log().sum()
-            for i in range(1, H.shape[0]):
-                pos += (W @ H[i] + eps).log().sum()
-            neg = -V_vals.div(WH_vals.add(eps)).sum()
-        else:
-            bminus = beta - 1
-            pos = (W @ H[0]).pow(beta)
-            for i in range(1, H.shape[0]):
-                pos += (W @ H[i]).pow(beta)
-            pos /= beta
-            neg = V_vals @ WH_vals.pow(bminus) / bminus
-            if 0 < beta < 1:
-                neg, pos = pos, neg
-        return pos, neg
+        return _nmf_sp_recon_beta_pos_neg(V, H, W, beta, eps)
 
 
 class NMFD(BaseComponent):
