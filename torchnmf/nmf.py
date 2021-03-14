@@ -87,15 +87,14 @@ def _double_backward_update(V: Tensor,
     param.data.mul_(multiplier)
 
 
-def _sp_double_backward_update(WH_pos_func: lambda: Tensor,
-                               WH_neg_func: lambda: Tensor,
+def _sp_double_backward_update(pos_out: Tensor,
+                               neg_out: Tensor,
                                param: Parameter,
                                gamma: float,
                                l1_reg: float,
                                l2_reg: float,
                                pos: Tensor = None):
     param.grad = None
-    pos_out, neg_out = WH_pos_func(), WH_neg_func()
     # first backward
     neg_out.backward()
     neg = torch.clone(param.grad).relu_().add_(eps)
@@ -309,6 +308,9 @@ class BaseComponent(torch.nn.Module):
         Returns:
             int: total number of iterations
         """
+        if V.is_sparse:
+            V = V.coalesce()
+
         assert torch.all(V >= 0.), "Target should be non-negative."
 
         W = self.W
@@ -324,27 +326,65 @@ class BaseComponent(torch.nn.Module):
         l1_reg = alpha * l1_ratio
         l2_reg = alpha * (1 - l1_ratio)
 
+        if beta == 2:
+            V_norm = V.values() @ V.values()
+        elif beta == 1:
+            V_norm = V.values() @ V.values().ad(eps).log() - V.sum()
+        elif beta == 0:
+            V_norm = -V.numel() - V.values().add(eps).log().sum()
+        else:
+            V_norm = V.values().pow(beta).sum() / beta / (beta - 1)
+
         with torch.no_grad():
-            WH = self.reconstruct(H, W)
-            loss_init = previous_loss = beta_div(
-                WH, V, beta).mul(2).sqrt().item()
+            if V.is_sparse:
+                pos, neg = self._sp_recon_beta_pos_neg(V, H, W, beta)
+                loss_init = V_norm + \
+                    (neg - pos) if 0 < beta < 1 else (pos - neg)
+                loss_init = loss_init.mul(2).sqrt().item()
+            else:
+                WH = self.reconstruct(H, W)
+                loss_init = beta_div(WH, V, beta).mul(2).sqrt().item()
+        previous_loss = loss_init
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
                 if W.requires_grad:
-                    WH = self.reconstruct(H.detach(), W)
-                    _double_backward_update(V, WH, W, beta, gamma, l1_reg, l2_reg,
-                                            _get_W_kl_positive(H.detach()) if beta == 1 else None)
+                    precomputed_pos = _get_W_kl_positive(
+                        H.detach()) if beta == 1 else None
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H.detach(), W, beta)
+                        _sp_double_backward_update(
+                            pos, neg, W, gamma, l1_reg, l2_reg, precomputed_pos)
+                    else:
+                        WH = self.reconstruct(H.detach(), W)
+                        _double_backward_update(
+                            V, WH, W, beta, gamma, l1_reg, l2_reg, precomputed_pos)
 
                 if H.requires_grad:
-                    WH = self.reconstruct(H, W.detach())
-                    _double_backward_update(V, WH, H, beta, gamma, l1_reg, l2_reg,
-                                            _get_H_kl_positive(W.detach()) if beta == 1 else None)
+                    precomputed_pos = _get_H_kl_positive(
+                        W.detach()) if beta == 1 else None
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H, W.detach(), beta)
+                        _sp_double_backward_update(
+                            pos, neg, H, gamma, l1_reg, l2_reg, precomputed_pos)
+                    else:
+                        WH = self.reconstruct(H, W.detach())
+                        _double_backward_update(
+                            V, WH, H, beta, gamma, l1_reg, l2_reg, precomputed_pos)
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
-                        WH = self.reconstruct(H, W)
-                        loss = beta_div(WH, V, beta).mul(2).sqrt().item()
+                        if V.is_sparse:
+                            pos, neg = self._sp_recon_beta_pos_neg(
+                                V, H, W, beta)
+                            loss = V_norm + \
+                                (neg - pos) if 0 < beta < 1 else (pos - neg)
+                            loss = loss.mul(2).sqrt().item()
+                        else:
+                            WH = self.reconstruct(H, W)
+                            loss = beta_div(WH, V, beta).mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
                     if (previous_loss - loss) / loss_init < tol:
