@@ -3,7 +3,7 @@ from torch import Tensor
 from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.modules.utils import _single, _pair, _triple
-from typing import Union, Iterable, Optional, List, Tuple
+from typing import Union, Iterable, Optional, List, Tuple, Callable
 from collections.abc import Iterable as Iterabc
 from .metrics import beta_div
 from tqdm import tqdm
@@ -75,6 +75,34 @@ def _double_backward_update(V: Tensor,
     if pos is None:
         param.grad.zero_()
         WH.backward(output_pos)
+        pos = torch.clone(param.grad).relu_().add_(eps)
+
+    if l1_reg > 0:
+        pos.add_(l1_reg)
+    if l2_reg > 0:
+        pos = pos.add(param.data, alpha=l2_reg)
+    multiplier = neg / pos
+    if gamma != 1:
+        multiplier.pow_(gamma)
+    param.data.mul_(multiplier)
+
+
+def _sp_double_backward_update(WH_pos_func: lambda: Tensor,
+                               WH_neg_func: lambda: Tensor,
+                               param: Parameter,
+                               gamma: float,
+                               l1_reg: float,
+                               l2_reg: float,
+                               pos: Tensor = None):
+    param.grad = None
+    pos_out, neg_out = WH_pos_func(), WH_neg_func()
+    # first backward
+    neg_out.backward()
+    neg = torch.clone(param.grad).relu_().add_(eps)
+
+    if pos is None:
+        param.grad.zero_()
+        pos_out.backward()
         pos = torch.clone(param.grad).relu_().add_(eps)
 
     if l1_reg > 0:
@@ -241,6 +269,13 @@ class BaseComponent(torch.nn.Module):
 
             Should be overridden by all subclasses.
             """
+        raise NotImplementedError
+
+    @staticmethod
+    def sparse_reconstruct(H: Tensor, W: Tensor, indices: torch.LongTensor):
+        raise NotImplementedError
+
+    def _sp_recon_beta_pos_neg(self, V, H, W, beta):
         raise NotImplementedError
 
     def fit(self,
@@ -498,6 +533,53 @@ class NMF(BaseComponent):
     @staticmethod
     def reconstruct(H, W):
         return F.linear(H, W)
+
+    @staticmethod
+    def sparse_reconstruct(H: Tensor, W: Tensor, indices: torch.LongTensor):
+        ii, jj = indices
+        n_vals = indices.shape[1]
+        dot_vals = []
+        rank = W.shape[1]
+        batch_size = max(rank, n_vals // rank)
+
+        for start in range(0, n_vals, batch_size):
+            batch = slice(start, start + batch_size)
+            dot_vals.append(
+                W[jj[batch], None, :] @ H[ii[batch], :, None]
+            )
+
+        dot_vals = torch.cat(dot_vals, 0).squeeze()
+        return dot_vals
+
+    def _sp_recon_beta_pos_neg(self, V, H, W, beta):
+        assert V.is_sparse
+        V_idx = V.indices()
+        V_vals = V.values()
+        if beta == 2:
+            pos = (H @ (W.T @ W)).view(-1) @ H.view(-1)
+            neg = (V.T @ H).view(-1) @ W.view(-1)
+            return pos, neg
+
+        WH_vals = self.sparse_reconstruct(H, W, V_idx)
+
+        if beta == 1:
+            pos = W.sum(0) @ H.sum(0)
+            neg = V_vals @ WH_vals.add(eps).log()
+        elif beta == 0:
+            pos = 0
+            for i in range(H.shape[0]):
+                pos += (W @ H[i] + eps).log().sum()
+            neg = -V_vals.div(WH_vals.add(eps)).sum()
+        else:
+            bminus = beta - 1
+            pos = 0
+            for i in range(H.shape[0]):
+                pos += (W @ H[i]).pow(beta)
+            pos /= beta
+            neg = V_vals @ WH_vals.pow(bminus) / bminus
+            if 0 < beta < 1:
+                neg, pos = pos, neg
+        return pos, neg
 
 
 class NMFD(BaseComponent):
