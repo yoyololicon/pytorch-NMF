@@ -77,7 +77,7 @@ def test_sparse_fit_sparse_target(beta,
         V_dense, beta, max_iter, False, sW, sH)
     n_iter = sparse_model.sparse_fit(
         V_sparse, beta, max_iter, False, sW, sH)
-    assert torch.allclose(dense_model.W, sparse_model.W, atol=2e-6), torch.abs(
+    assert torch.allclose(dense_model.W, sparse_model.W, atol=3e-6), torch.abs(
         dense_model.W - sparse_model.W).max().item()
-    assert torch.allclose(dense_model.H, sparse_model.H, atol=2e-6), torch.abs(
+    assert torch.allclose(dense_model.H, sparse_model.H, atol=3e-6), torch.abs(
         dense_model.H - sparse_model.H).max().item()
