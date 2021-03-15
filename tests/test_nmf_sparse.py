@@ -8,9 +8,9 @@ from torchnmf.nmf import *
 @pytest.mark.parametrize('beta', [-1, 0, 0.5, 1, 1.5, 2, 3])
 @pytest.mark.parametrize('alpha', [0, 0.1])
 @pytest.mark.parametrize('l1_ratio', [0, 0.5, 1.])
-def test_fit_sparse_target(beta,
-                           alpha,
-                           l1_ratio):
+def test_fit_sparse_dense(beta,
+                          alpha,
+                          l1_ratio):
     max_iter = 5
     Vshape = (800, 800)
 
@@ -52,9 +52,9 @@ def test_fit_sparse_target(beta,
                                         # (-0.5, 0.3, None),         # beta < 0 very unstable
                                         #(-0.5, None, 0.3),
                                         ])
-def test_sparse_fit_sparse_target(beta,
-                                  sW,
-                                  sH):
+def test_sparse_fit_sparse_dense(beta,
+                                 sW,
+                                 sH):
 
     torch.random.manual_seed(2434)
     max_iter = 1
@@ -81,3 +81,45 @@ def test_sparse_fit_sparse_target(beta,
         dense_model.W - sparse_model.W).max().item()
     assert torch.allclose(dense_model.H, sparse_model.H, atol=3e-6), torch.abs(
         dense_model.H - sparse_model.H).max().item()
+
+
+@pytest.mark.parametrize('beta', [-1, 0, 0.5, 1, 1.5, 2, 3])
+@pytest.mark.parametrize('sp_ratio', [0.95, 0.98])
+@pytest.mark.parametrize('alpha', [0, 0.1])
+@pytest.mark.parametrize('l1_ratio', [0, 0.5, 1.])
+def test_fit_sparse_target(beta,
+                           sp_ratio,
+                           alpha,
+                           l1_ratio):
+    max_iter = 50
+    Vshape = (100, 100)
+    V = torch.rand(*Vshape)
+    indices = torch.nonzero(V > sp_ratio).T
+    V = torch.sparse_coo_tensor(
+        indices, V[indices[0], indices[1]], Vshape)
+
+    m = NMF(Vshape, 8)
+    n_iter = m.fit(V, beta, 1e-4, max_iter, False, alpha, l1_ratio)
+    assert n_iter <= max_iter
+    assert not torch.any(torch.isnan(m.W))
+    assert not torch.any(torch.isnan(m.H))
+
+
+@pytest.mark.parametrize('beta', [0, 0.5,  1, 1.5, 2, 2.5])
+@pytest.mark.parametrize('sp_ratio', [0.95, 0.98])
+@pytest.mark.parametrize('sW, sH', [(None,) * 2, (0.3, None), (None, 0.3)])
+def test_sparse_fit_sparse_target(beta,
+                                  sp_ratio,
+                                  sW,
+                                  sH):
+    max_iter = 50
+    Vshape = (100, 100)
+    V = torch.rand(*Vshape)
+    indices = torch.nonzero(V > sp_ratio).T
+    V = torch.sparse_coo_tensor(
+        indices, V[indices[0], indices[1]], Vshape)
+    m = NMF(Vshape, 8)
+    n_iter = m.sparse_fit(V, beta, max_iter, False, sW, sH)
+    assert n_iter == max_iter
+    assert not torch.any(torch.isnan(m.W))
+    assert not torch.any(torch.isnan(m.H))
