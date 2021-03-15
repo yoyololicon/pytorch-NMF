@@ -46,7 +46,6 @@ def _proj_func(s: Tensor,
         v += (k1 - v.sum()) / (N - zero_coef.sum())
         v.relu_()
 
-
     return v.view(s_shape)
 
 
@@ -288,9 +287,6 @@ class BaseComponent(torch.nn.Module):
 
             Should be overridden by all subclasses.
             """
-        raise NotImplementedError
-
-    def _sparse_reconstruct(self, H: Tensor, W: Tensor, indices: torch.LongTensor):
         raise NotImplementedError
 
     def _sp_recon_beta_pos_neg(self, V, H, W, beta):
@@ -536,7 +532,7 @@ class BaseComponent(torch.nn.Module):
                         else:
                             _double_backward_update(
                                 V, WH, H, beta, gamma, 0, 0, precomputed_pos)
-                        
+
                     else:
                         H.grad = None
                         if V.is_sparse:
@@ -683,9 +679,6 @@ class NMF(BaseComponent):
     @staticmethod
     def reconstruct(H, W):
         return F.linear(H, W)
-
-    def _sparse_reconstruct(self, H: Tensor, W: Tensor, indices: Tensor):
-        return _nmf_sparse_reconstruct(H, W, indices)
 
     def _sp_recon_beta_pos_neg(self, V, H, W, beta):
         assert V.is_sparse
