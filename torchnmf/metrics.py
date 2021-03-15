@@ -54,8 +54,8 @@ def is_div(input: Tensor, target: Tensor) -> Tensor:
     Returns:
         Tensor: single element tensor
     """
-    div = target.add(eps) / input.add(eps)
-    return div.sum() - div.log().sum() - target.numel()
+    target_eps, input_eps = target.add(eps), input.add(eps)
+    return (target / input_eps).sum() - target_eps.log().sum() + input_eps.log().sum() - target.numel()
 
 
 def beta_div(input, target, beta=2):
@@ -83,20 +83,14 @@ def beta_div(input, target, beta=2):
     elif beta == 0:
         return is_div(input, target)
     else:
-        input = input.reshape(-1)
+        input = input.reshape(-1).add(eps)
         target = target.reshape(-1)
+        target_mask = target > 0
 
         bminus = beta - 1
-        term_1 = target.pow(beta)
-        term_1 = term_1[~term_1.isinf()].sum()
-        term_2 = input.pow(beta)
-        term_2 = term_2[~term_2.isinf()].sum()
-
-        term_3_nonzero_mask, = target.nonzero(as_tuple=True)
-        term_3_target, term_3_input = target[term_3_nonzero_mask], input[term_3_nonzero_mask]
-        term_3_input = term_3_input.pow(bminus)
-        term_3_mask = ~term_3_input.isinf()
-        term_3 = term_3_target[term_3_mask] @ term_3_input[term_3_mask]
+        term_1 = target[target_mask].pow(beta).sum()
+        term_2 = input.pow(beta).sum()
+        term_3 = target[target_mask] @ input[target_mask].pow(bminus)
 
         loss = term_1 + bminus * term_2 - beta * term_3
         return loss / (beta * bminus)
