@@ -82,11 +82,13 @@ class BetaMu(Optimizer):
                     output_neg = V / WH.add(eps)
                     output_pos = torch.ones_like(WH)
                 elif beta == 0:
-                    output_neg = V / (WH * WH).add(eps)
-                    output_pos = 1 / WH.add(eps)
+                    WH_eps = WH.add(eps)
+                    output_neg = V / (WH_eps * WH_eps)
+                    output_pos = 1 / WH_eps
                 else:
-                    output_neg = WH.pow(beta - 2) * V
-                    output_pos = WH.pow(beta - 1)
+                    WH_eps = WH.add(eps)
+                    output_neg = WH_eps.pow(beta - 2) * V
+                    output_pos = WH_eps.pow(beta - 1)
                 # first backward
                 WH.backward(output_neg, retain_graph=True)
                 neg = torch.clone(p.grad).relu_()

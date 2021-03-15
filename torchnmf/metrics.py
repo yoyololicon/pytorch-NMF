@@ -1,4 +1,3 @@
-import torch
 from torch import Tensor
 from torch.nn import functional as F
 from .constants import eps
@@ -90,7 +89,7 @@ def beta_div(input, target, beta=2):
         bminus = beta - 1
         term_1 = target[target_mask].pow(beta).sum()
         term_2 = input.pow(beta).sum()
-        term_3 = target[target_mask] @ input[target_mask].pow(bminus)
+        term_3 = target @ input.pow(bminus)
 
         loss = term_1 + bminus * term_2 - beta * term_3
         return loss / (beta * bminus)

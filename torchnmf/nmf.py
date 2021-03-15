@@ -3,7 +3,7 @@ from torch import Tensor
 from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.modules.utils import _single, _pair, _triple
-from typing import Union, Iterable, Optional, List, Tuple, Callable
+from typing import Union, Iterable, Optional, Tuple
 from collections.abc import Iterable as Iterabc
 from .metrics import beta_div
 from tqdm import tqdm
@@ -23,19 +23,19 @@ def _proj_func(s: Tensor,
                k1: float,
                k2: float) -> Tensor:
     s_shape = s.size()
-    s = s.contiguous().view(-1)
+    s = s.reshape(-1)
     N = s.numel()
     v = s + (k1 - s.sum()) / N
 
     zero_coef = torch.zeros(N, dtype=torch.bool, device=s.device)
     while True:
-        m = k1 / (N - zero_coef.sum())
+        m = k1 / (N - zero_coef.count_nonzero())
         w = torch.where(~zero_coef, v - m, v)
         a = w @ w
         b = 2 * w @ v
         c = v @ v - k2
         alphap = (-b + (b * b - 4 * a * c).relu().sqrt()) * 0.5 / a
-        v += alphap * w
+        v.add_(w, alpha=alphap.item())
 
         mask = v < 0
         if not torch.any(mask):
@@ -43,7 +43,7 @@ def _proj_func(s: Tensor,
 
         zero_coef |= mask
         v.relu_()
-        v += (k1 - v.sum()) / (N - zero_coef.sum())
+        v += (k1 - v.sum()) / (N - zero_coef.count_nonzero())
         v.relu_()
 
     return v.view(s_shape)
@@ -169,7 +169,7 @@ def _get_V_norm(V: Tensor, beta: float):
         return -V.numel() - V.values().add(eps).log().sum()
     else:
         V_vals = V.values()
-        V_vals = V_vals[V_vals.nonzero()[0]]
+        V_vals = V_vals[V_vals > 0]
         return V_vals.pow(beta).sum() / beta / (beta - 1)
 
 
@@ -279,6 +279,8 @@ class BaseComponent(torch.nn.Module):
             H = self.H
         if W is None:
             W = self.W
+        assert H is not None
+        assert W is not None
         return self.reconstruct(H, W)
 
     @staticmethod
@@ -621,8 +623,7 @@ def _nmf_sp_recon_beta_pos_neg(V: Tensor, H: Tensor, W: Tensor, beta: float, eps
         for i in range(1, H.shape[0]):
             pos += (W @ H[i] + eps).pow(beta).sum()
         pos /= beta
-        mask = V_vals > 0
-        neg = V_vals[mask] @ WH_vals[mask].add(eps).pow(bminus) / bminus
+        neg = V_vals @ WH_vals.add(eps).pow(bminus) / bminus
     return pos, neg
 
 
