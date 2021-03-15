@@ -18,33 +18,36 @@ __all__ = [
 ]
 
 
+@torch.jit.script
 def _proj_func(s: Tensor,
                k1: float,
                k2: float) -> Tensor:
-    s_shape = s.shape
+    s_shape = s.size()
     s = s.contiguous().view(-1)
     N = s.numel()
     v = s + (k1 - s.sum()) / N
 
-    zero_coef = torch.ones_like(v) < 0
+    zero_coef = torch.zeros(N, dtype=torch.bool, device=s.device)
     while True:
         m = k1 / (N - zero_coef.sum())
         w = torch.where(~zero_coef, v - m, v)
         a = w @ w
         b = 2 * w @ v
         c = v @ v - k2
-        alphap = (-b + torch.clamp(b * b - 4 * a * c, min=0).sqrt()) * 0.5 / a
+        alphap = (-b + (b * b - 4 * a * c).relu().sqrt()) * 0.5 / a
         v += alphap * w
 
-        if (v >= 0).all():
+        mask = v < 0
+        if not torch.any(mask):
             break
 
-        zero_coef |= v < 0
-        v[zero_coef] = 0
+        zero_coef |= mask
+        v.relu_()
         v += (k1 - v.sum()) / (N - zero_coef.sum())
-        v[zero_coef] = 0
+        v.relu_()
 
-    return v.view(*s_shape)
+
+    return v.view(s_shape)
 
 
 def _double_backward_update(V: Tensor,
@@ -67,8 +70,10 @@ def _double_backward_update(V: Tensor,
         output_neg = V / (WH_eps * WH_eps)
         output_pos = 1 / WH_eps
     else:
-        output_neg = WH.pow(beta - 2) * V
-        output_pos = WH.pow(beta - 1)
+        WH_eps = WH.add(eps)
+        output_neg = WH_eps.pow(beta - 2) * V
+        output_pos = WH_eps.pow(beta - 1)
+
     # first backward
     WH.backward(output_neg, retain_graph=pos is None)
     neg = torch.clone(param.grad).relu_().add_(eps)
@@ -164,7 +169,9 @@ def _get_V_norm(V: Tensor, beta: float):
     elif beta == 0:
         return -V.numel() - V.values().add(eps).log().sum()
     else:
-        return V.values().pow(beta).sum() / beta / (beta - 1)
+        V_vals = V.values()
+        V_vals = V_vals[V_vals.nonzero()[0]]
+        return V_vals.pow(beta).sum() / beta / (beta - 1)
 
 
 class BaseComponent(torch.nn.Module):
@@ -402,7 +409,7 @@ class BaseComponent(torch.nn.Module):
                    V,
                    beta=1,
                    max_iter=200,
-                   verbose=0,
+                   verbose=False,
                    sW=None,
                    sH=None,
                    ) -> int:
@@ -429,8 +436,8 @@ class BaseComponent(torch.nn.Module):
         Returns:
             int: total number of iterations
         """
-
-        assert torch.all(V >= 0.), "Target should be non-negative."
+        assert torch.all((V._values() if V.is_sparse else V) >=
+                         0.), "Target should be non-negative."
         W = self.W
         H = self.H
 
@@ -500,7 +507,7 @@ class BaseComponent(torch.nn.Module):
                                 if V.is_sparse:
                                     new_pos, new_neg = self._sp_recon_beta_pos_neg(
                                         V, H, Wnew, beta)
-                                    new_loss = V_norm + pos - neg
+                                    new_loss = V_norm + new_pos - new_neg
                                 else:
                                     new_loss = beta_div(self.reconstruct(H, Wnew),
                                                         V, beta)
@@ -529,7 +536,7 @@ class BaseComponent(torch.nn.Module):
                         else:
                             _double_backward_update(
                                 V, WH, H, beta, gamma, 0, 0, precomputed_pos)
-                        _renorm(W, H, 'H')
+                        
                     else:
                         H.grad = None
                         if V.is_sparse:
@@ -549,7 +556,7 @@ class BaseComponent(torch.nn.Module):
                                 if V.is_sparse:
                                     new_pos, new_neg = self._sp_recon_beta_pos_neg(
                                         V, Hnew, W, beta)
-                                    new_loss = V_norm + pos - neg
+                                    new_loss = V_norm + new_pos - new_neg
                                 else:
                                     new_loss = beta_div(self.reconstruct(Hnew, W),
                                                         V, beta)
@@ -560,6 +567,7 @@ class BaseComponent(torch.nn.Module):
 
                             stepsize_H *= 1.2
                             H.copy_(Hnew)
+                    _renorm(W, H, 'H')
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
@@ -613,11 +621,12 @@ def _nmf_sp_recon_beta_pos_neg(V: Tensor, H: Tensor, W: Tensor, beta: float, eps
         neg = -V_vals.div(WH_vals.add(eps)).sum()
     else:
         bminus = beta - 1
-        pos = (W @ H[0]).pow(beta).sum()
+        pos = (W @ H[0] + eps).pow(beta).sum()
         for i in range(1, H.shape[0]):
-            pos += (W @ H[i]).pow(beta).sum()
+            pos += (W @ H[i] + eps).pow(beta).sum()
         pos /= beta
-        neg = V_vals @ WH_vals.pow(bminus) / bminus
+        mask = V_vals > 0
+        neg = V_vals[mask] @ WH_vals[mask].add(eps).pow(bminus) / bminus
     return pos, neg
 
 
