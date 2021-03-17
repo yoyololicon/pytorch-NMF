@@ -3,7 +3,7 @@ from torch import Tensor
 from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.modules.utils import _single, _pair, _triple
-from typing import Union, Iterable, Optional, List, Tuple
+from typing import Union, Iterable, Optional, Tuple
 from collections.abc import Iterable as Iterabc
 from .metrics import beta_div
 from tqdm import tqdm
@@ -18,33 +18,35 @@ __all__ = [
 ]
 
 
+@torch.jit.script
 def _proj_func(s: Tensor,
                k1: float,
                k2: float) -> Tensor:
-    s_shape = s.shape
-    s = s.contiguous().view(-1)
+    s_shape = s.size()
+    s = s.reshape(-1)
     N = s.numel()
     v = s + (k1 - s.sum()) / N
 
-    zero_coef = torch.ones_like(v) < 0
+    zero_coef = torch.zeros(N, dtype=torch.bool, device=s.device)
     while True:
-        m = k1 / (N - zero_coef.sum())
+        m = k1 / (N - zero_coef.count_nonzero())
         w = torch.where(~zero_coef, v - m, v)
         a = w @ w
         b = 2 * w @ v
         c = v @ v - k2
-        alphap = (-b + torch.clamp(b * b - 4 * a * c, min=0).sqrt()) * 0.5 / a
-        v += alphap * w
+        alphap = (-b + (b * b - 4 * a * c).relu().sqrt()) * 0.5 / a
+        v.add_(w, alpha=alphap.item())
 
-        if (v >= 0).all():
+        mask = v < 0
+        if not torch.any(mask):
             break
 
-        zero_coef |= v < 0
-        v[zero_coef] = 0
-        v += (k1 - v.sum()) / (N - zero_coef.sum())
-        v[zero_coef] = 0
+        zero_coef |= mask
+        v.relu_()
+        v += (k1 - v.sum()) / (N - zero_coef.count_nonzero())
+        v.relu_()
 
-    return v.view(*s_shape)
+    return v.view(s_shape)
 
 
 def _double_backward_update(V: Tensor,
@@ -63,11 +65,14 @@ def _double_backward_update(V: Tensor,
         output_neg = V / WH.add(eps)
         output_pos = None
     elif beta == 0:
-        output_neg = V / (WH * WH).add(eps)
-        output_pos = 1 / WH.add(eps)
+        WH_eps = WH.add(eps)
+        output_neg = V / (WH_eps * WH_eps)
+        output_pos = 1 / WH_eps
     else:
-        output_neg = WH.pow(beta - 2) * V
-        output_pos = WH.pow(beta - 1)
+        WH_eps = WH.add(eps)
+        output_neg = WH_eps.pow(beta - 2) * V
+        output_pos = WH_eps.pow(beta - 1)
+
     # first backward
     WH.backward(output_neg, retain_graph=pos is None)
     neg = torch.clone(param.grad).relu_().add_(eps)
@@ -75,6 +80,33 @@ def _double_backward_update(V: Tensor,
     if pos is None:
         param.grad.zero_()
         WH.backward(output_pos)
+        pos = torch.clone(param.grad).relu_().add_(eps)
+
+    if l1_reg > 0:
+        pos.add_(l1_reg)
+    if l2_reg > 0:
+        pos = pos.add(param.data, alpha=l2_reg)
+    multiplier = neg / pos
+    if gamma != 1:
+        multiplier.pow_(gamma)
+    param.data.mul_(multiplier)
+
+
+def _sp_double_backward_update(pos_out: Tensor,
+                               neg_out: Tensor,
+                               param: Parameter,
+                               gamma: float,
+                               l1_reg: float,
+                               l2_reg: float,
+                               pos: Tensor = None):
+    param.grad = None
+    # first backward
+    neg_out.backward()
+    neg = torch.clone(param.grad).relu_().add_(eps)
+
+    if pos is None:
+        param.grad.zero_()
+        pos_out.backward()
         pos = torch.clone(param.grad).relu_().add_(eps)
 
     if l1_reg > 0:
@@ -125,6 +157,20 @@ def _renorm(W: Tensor,
         W *= H_norm[slicer]
     else:
         raise ValueError("Input type isn't valid!")
+
+
+def _get_V_norm(V: Tensor, beta: float):
+    assert V.is_coalesced()
+    if beta == 2:
+        return V.values() @ V.values()
+    elif beta == 1:
+        return V.values() @ V.values().add(eps).log() - V.values().sum()
+    elif beta == 0:
+        return -V.numel() - V.values().add(eps).log().sum()
+    else:
+        V_vals = V.values()
+        V_vals = V_vals[V_vals > 0]
+        return V_vals.pow(beta).sum() / beta / (beta - 1)
 
 
 class BaseComponent(torch.nn.Module):
@@ -233,6 +279,8 @@ class BaseComponent(torch.nn.Module):
             H = self.H
         if W is None:
             W = self.W
+        assert H is not None
+        assert W is not None
         return self.reconstruct(H, W)
 
     @staticmethod
@@ -243,6 +291,10 @@ class BaseComponent(torch.nn.Module):
             """
         raise NotImplementedError
 
+    def _sp_recon_beta_pos_neg(self, V, H, W, beta):
+        raise NotImplementedError
+
+    @torch.jit.ignore
     def fit(self,
             V: Tensor,
             beta: float = 1,
@@ -258,7 +310,7 @@ class BaseComponent(torch.nn.Module):
         :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
         Args:
-            V (Tensor): data tensor to be decomposed
+            V (Tensor): data tensor to be decomposed. Can be a sparse tensor returned by :func:`torch.sparse_coo_tensor` 
             beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
                         Default: ``1.``
             tol (float): tolerance of the stopping condition. Default: ``1e-4``
@@ -274,7 +326,8 @@ class BaseComponent(torch.nn.Module):
         Returns:
             int: total number of iterations
         """
-        assert torch.all(V >= 0.), "Target should be non-negative."
+        assert torch.all((V._values() if V.is_sparse else V) >=
+                         0.), "Target should be non-negative."
 
         W = self.W
         H = self.H
@@ -289,27 +342,58 @@ class BaseComponent(torch.nn.Module):
         l1_reg = alpha * l1_ratio
         l2_reg = alpha * (1 - l1_ratio)
 
+        if V.is_sparse:
+            V = V.coalesce()
+            V_norm = _get_V_norm(V, beta)
+
         with torch.no_grad():
-            WH = self.reconstruct(H, W)
-            loss_init = previous_loss = beta_div(
-                WH, V, beta).mul(2).sqrt().item()
+            if V.is_sparse:
+                pos, neg = self._sp_recon_beta_pos_neg(V, H, W, beta)
+                loss_init = V_norm + pos - neg
+            else:
+                WH = self.reconstruct(H, W)
+                loss_init = beta_div(WH, V, beta)
+        loss_init = loss_init.mul(2).sqrt().item()
+        previous_loss = loss_init
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
                 if W.requires_grad:
-                    WH = self.reconstruct(H.detach(), W)
-                    _double_backward_update(V, WH, W, beta, gamma, l1_reg, l2_reg,
-                                            _get_W_kl_positive(H.detach()) if beta == 1 else None)
+                    precomputed_pos = _get_W_kl_positive(
+                        H.detach()) if beta == 1 else None
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H.detach(), W, beta)
+                        _sp_double_backward_update(
+                            pos, neg, W, gamma, l1_reg, l2_reg, precomputed_pos)
+                    else:
+                        WH = self.reconstruct(H.detach(), W)
+                        _double_backward_update(
+                            V, WH, W, beta, gamma, l1_reg, l2_reg, precomputed_pos)
 
                 if H.requires_grad:
-                    WH = self.reconstruct(H, W.detach())
-                    _double_backward_update(V, WH, H, beta, gamma, l1_reg, l2_reg,
-                                            _get_H_kl_positive(W.detach()) if beta == 1 else None)
+                    precomputed_pos = _get_H_kl_positive(
+                        W.detach()) if beta == 1 else None
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H, W.detach(), beta)
+                        _sp_double_backward_update(
+                            pos, neg, H, gamma, l1_reg, l2_reg, precomputed_pos)
+                    else:
+                        WH = self.reconstruct(H, W.detach())
+                        _double_backward_update(
+                            V, WH, H, beta, gamma, l1_reg, l2_reg, precomputed_pos)
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
-                        WH = self.reconstruct(H, W)
-                        loss = beta_div(WH, V, beta).mul(2).sqrt().item()
+                        if V.is_sparse:
+                            pos, neg = self._sp_recon_beta_pos_neg(
+                                V, H, W, beta)
+                            loss = V_norm + pos - neg
+                        else:
+                            WH = self.reconstruct(H, W)
+                            loss = beta_div(WH, V, beta)
+                        loss = loss.mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
                     if (previous_loss - loss) / loss_init < tol:
@@ -318,11 +402,12 @@ class BaseComponent(torch.nn.Module):
 
         return n_iter + 1
 
+    @torch.jit.ignore
     def sparse_fit(self,
                    V,
-                   beta=1,
+                   beta=2,
                    max_iter=200,
-                   verbose=0,
+                   verbose=False,
                    sW=None,
                    sH=None,
                    ) -> int:
@@ -332,11 +417,19 @@ class BaseComponent(torch.nn.Module):
         To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
         :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
+
+        Note:
+            Although the value range of ``beta`` is unrestricted, the original implementation only use Euclidean Distance 
+            (which means ``beta=2``) as their loss function, and we have no gaurantee on other values besides 2.
+
+        Warning:
+            When using sparse tensor as target and setting ``beta<0``, the training process will become very unstable.
+
         .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
             https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
 
         Args:
-            V (Tensor): data tensor to be decomposed
+            V (Tensor): data tensor to be decomposed. Can be a sparse tensor returned by :func:`torch.sparse_coo_tensor` 
             beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model
                         Default: ``1.``
             max_iter (int): maximum number of iterations before timing out. Default: ``200``
@@ -349,6 +442,8 @@ class BaseComponent(torch.nn.Module):
         Returns:
             int: total number of iterations
         """
+        assert torch.all((V._values() if V.is_sparse else V) >=
+                         0.), "Target should be non-negative."
         W = self.W
         H = self.H
 
@@ -377,18 +472,36 @@ class BaseComponent(torch.nn.Module):
         else:
             gamma = 1
 
+        if V.is_sparse:
+            V = V.coalesce()
+            V_norm = _get_V_norm(V, beta)
+
         stepsize_W, stepsize_H = 1, 1
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
                 if W.requires_grad:
-                    if sW is None:
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H.detach(), W, beta)
+                        WH = None
+                    else:
                         WH = self.reconstruct(H.detach(), W)
-                        _double_backward_update(V, WH, W, beta, gamma, 0, 0,
-                                                _get_W_kl_positive(H.detach()) if beta == 1 else None)
+                        pos, neg = None, None
+                    if sW is None:
+                        precomputed_pos = _get_W_kl_positive(
+                            H.detach()) if beta == 1 else None
+                        if V.is_sparse:
+                            _sp_double_backward_update(
+                                pos, neg, W, gamma, 0, 0, precomputed_pos)
+                        else:
+                            _double_backward_update(
+                                V, WH, W, beta, gamma, 0, 0, precomputed_pos)
                     else:
                         W.grad = None
-                        WH = self.reconstruct(H.detach(), W)
-                        loss = beta_div(WH, V, beta)
+                        if V.is_sparse:
+                            loss = V_norm + pos - neg
+                        else:
+                            loss = beta_div(WH, V, beta)
                         loss.backward()
                         with torch.no_grad():
                             for i in range(10):
@@ -397,8 +510,13 @@ class BaseComponent(torch.nn.Module):
                                 for j in range(Wnew.shape[1]):
                                     Wnew[:, j] = _proj_func(
                                         Wnew[:, j], L1a * norms[j], norms[j] ** 2)
-                                new_loss = beta_div(self.reconstruct(self.H, Wnew),
-                                                    V, beta)
+                                if V.is_sparse:
+                                    new_pos, new_neg = self._sp_recon_beta_pos_neg(
+                                        V, H, Wnew, beta)
+                                    new_loss = V_norm + new_pos - new_neg
+                                else:
+                                    new_loss = beta_div(self.reconstruct(H, Wnew),
+                                                        V, beta)
                                 if new_loss <= loss:
                                     break
 
@@ -408,15 +526,29 @@ class BaseComponent(torch.nn.Module):
                             W.copy_(Wnew)
 
                 if H.requires_grad:
-                    if sH is None:
+                    if V.is_sparse:
+                        pos, neg = self._sp_recon_beta_pos_neg(
+                            V, H, W.detach(), beta)
+                        WH = None
+                    else:
                         WH = self.reconstruct(H, W.detach())
-                        _double_backward_update(V, WH, H, beta, gamma, 0, 0,
-                                                _get_H_kl_positive(W.detach()) if beta == 1 else None)
-                        _renorm(W, H, 'H')
+                        pos, neg = None, None
+                    if sH is None:
+                        precomputed_pos = _get_H_kl_positive(
+                            W.detach()) if beta == 1 else None
+                        if V.is_sparse:
+                            _sp_double_backward_update(
+                                pos, neg, H, gamma, 0, 0, precomputed_pos)
+                        else:
+                            _double_backward_update(
+                                V, WH, H, beta, gamma, 0, 0, precomputed_pos)
+
                     else:
                         H.grad = None
-                        WH = self.reconstruct(H, W.detach())
-                        loss = beta_div(WH, V, beta)
+                        if V.is_sparse:
+                            loss = V_norm + pos - neg
+                        else:
+                            loss = beta_div(WH, V, beta)
                         loss.backward()
 
                         with torch.no_grad():
@@ -426,8 +558,14 @@ class BaseComponent(torch.nn.Module):
                                 for j in range(H.shape[1]):
                                     Hnew[:, j] = _proj_func(
                                         Hnew[:, j], L1s * norms[j], norms[j] ** 2)
-                                new_loss = beta_div(self.reconstruct(Hnew, W),
-                                                    V, beta)
+
+                                if V.is_sparse:
+                                    new_pos, new_neg = self._sp_recon_beta_pos_neg(
+                                        V, Hnew, W, beta)
+                                    new_loss = V_norm + new_pos - new_neg
+                                else:
+                                    new_loss = beta_div(self.reconstruct(Hnew, W),
+                                                        V, beta)
                                 if new_loss <= loss:
                                     break
 
@@ -435,14 +573,66 @@ class BaseComponent(torch.nn.Module):
 
                             stepsize_H *= 1.2
                             H.copy_(Hnew)
+                    _renorm(W, H, 'H')
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
-                        WH = self.reconstruct(H, W)
-                        loss = beta_div(WH, V, beta).mul(2).sqrt().item()
+                        if V.is_sparse:
+                            pos, neg = self._sp_recon_beta_pos_neg(
+                                V, H, W, beta)
+                            loss = V_norm + pos - neg
+                        else:
+                            loss = beta_div(self.reconstruct(H, W),
+                                            V, beta)
+                        loss = loss.mul(2).sqrt().item()
                     pbar.set_postfix(loss=loss)
                     pbar.update(10)
         return n_iter + 1
+
+
+@torch.jit.script
+def _nmf_sparse_reconstruct(H: Tensor, W: Tensor, indices: Tensor):
+    ii, jj = indices[0], indices[1]
+    n_vals = indices.shape[1]
+    dot_vals = []
+    rank = W.shape[1]
+    batch_size = max(rank, n_vals // rank)
+
+    dot_vals = torch.empty(n_vals, dtype=H.dtype, device=H.device)
+    for start in range(0, n_vals, batch_size):
+        batch = slice(start, start + batch_size)
+        dot_vals[batch] = (W[jj[batch], :] * H[ii[batch], :]).sum(1)
+
+    return dot_vals
+
+
+@torch.jit.script
+def _nmf_sp_recon_beta_pos_neg(V: Tensor, H: Tensor, W: Tensor, beta: float, eps: float):
+    V_idx = V.indices()
+    V_vals = V.values()
+    if beta == 2:
+        pos = torch.chain_matmul(H, W.T, W).view(-1) @ H.view(-1) * 0.5
+        neg = (V.t() @ H).view(-1) @ W.view(-1)
+        return pos, neg
+
+    WH_vals = _nmf_sparse_reconstruct(H, W, V_idx)
+
+    if beta == 1:
+        pos = W.sum(0) @ H.sum(0)
+        neg = V_vals @ WH_vals.add(eps).log()
+    elif beta == 0:
+        pos = (W @ H[0] + eps).log().sum()
+        for i in range(1, H.shape[0]):
+            pos += (W @ H[i] + eps).log().sum()
+        neg = -V_vals.div(WH_vals.add(eps)).sum()
+    else:
+        bminus = beta - 1
+        pos = (W @ H[0] + eps).pow(beta).sum()
+        for i in range(1, H.shape[0]):
+            pos += (W @ H[i] + eps).pow(beta).sum()
+        pos /= beta
+        neg = V_vals @ WH_vals.add(eps).pow(bminus) / bminus
+    return pos, neg
 
 
 class NMF(BaseComponent):
@@ -499,6 +689,10 @@ class NMF(BaseComponent):
     def reconstruct(H, W):
         return F.linear(H, W)
 
+    def _sp_recon_beta_pos_neg(self, V, H, W, beta):
+        assert V.is_sparse
+        return _nmf_sp_recon_beta_pos_neg(V, H, W, beta, eps)
+
 
 class NMFD(BaseComponent):
     r"""Non-negative Matrix Factor Deconvolution (NMFD).
@@ -525,6 +719,10 @@ class NMFD(BaseComponent):
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+    Warning:
+        Using sparse tensor as target when calling :func:`NMFD.fit() <torchnmf.nmf.BaseComponent.fit>`
+        or :func:`NMFD.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
 
     Args:
         Vshape (tuple, optional): size of target matrix V
@@ -605,6 +803,11 @@ class NMF2D(BaseComponent):
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
+    Warning:
+        Using sparse tensor as target when calling :func:`NMF2D.fit() <torchnmf.nmf.BaseComponent.fit>` 
+        or :func:`NMF2D.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
+
+
     Args:
         Vshape (tuple, optional): size of target tensor V
         rank (int, optional): size of hidden dimension
@@ -675,6 +878,11 @@ class NMF3D(BaseComponent):
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+    Warning:
+        Using sparse tensor as target when calling :func:`NMF3D.fit() <torchnmf.nmf.BaseComponent.fit>` 
+        or :func:`NMF3D.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
+
 
     Args:
         Vshape (tuple, optional): size of target tensor V

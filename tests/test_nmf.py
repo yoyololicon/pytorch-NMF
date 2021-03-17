@@ -116,9 +116,11 @@ def test_fit(beta,
     m = NMF(V.shape, 8)
     n_iter = m.fit(V, beta, tol, max_iter, verbose, alpha, l1_ratio)
     assert n_iter <= max_iter
+    assert not torch.any(torch.isnan(m.W))
+    assert not torch.any(torch.isnan(m.H))
 
 
-@pytest.mark.parametrize('beta', [0, 1, 2, 2.5])
+@pytest.mark.parametrize('beta', [-1, 0, 0.5,  1, 1.5, 2, 2.5])
 @pytest.mark.parametrize('verbose', [True, False])
 @pytest.mark.parametrize('sW, sH', [(None,) * 2, (0.3, None), (None, 0.3)])
 def test_sparse_fit(beta,
@@ -130,3 +132,5 @@ def test_sparse_fit(beta,
     m = NMF(V.shape, 8)
     n_iter = m.sparse_fit(V, beta, max_iter, verbose, sW, sH)
     assert n_iter == max_iter
+    assert not torch.any(torch.isnan(m.W))
+    assert not torch.any(torch.isnan(m.H))
