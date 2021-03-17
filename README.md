@@ -102,7 +102,7 @@ torch.set_flush_denormal(True)`.
 
 ## TODO
 
-- [ ] Support sparse matrix.
+- [x] Support sparse matrix target (only on `NMF` module).
 - [x] Regularization.
 - [ ] NNDSVD initialization.
 - [x] 2/3-D deconvolutional module.
