@@ -310,7 +310,7 @@ class BaseComponent(torch.nn.Module):
         :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
         Args:
-            V (Tensor): data tensor to be decomposed
+            V (Tensor): data tensor to be decomposed. Can be a sparse tensor returned by :func:`torch.sparse_coo_tensor` 
             beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model.
                         Default: ``1.``
             tol (float): tolerance of the stopping condition. Default: ``1e-4``
@@ -405,7 +405,7 @@ class BaseComponent(torch.nn.Module):
     @torch.jit.ignore
     def sparse_fit(self,
                    V,
-                   beta=1,
+                   beta=2,
                    max_iter=200,
                    verbose=False,
                    sW=None,
@@ -417,11 +417,19 @@ class BaseComponent(torch.nn.Module):
         To invoke this function, attributes :meth:`H <torchnmf.nmf.BaseComponent.H>` and
         :meth:`W <torchnmf.nmf.BaseComponent.W>` should be presented in this module.
 
+
+        Note:
+            Although the value range of ``beta`` is unrestricted, the original implementation only use Euclidean Distance 
+            (which means ``beta=2``) as their loss function, and we have no gaurantee on other values besides 2.
+
+        Warning:
+            When using sparse tensor as target and setting ``beta<0``, the training process will become very unstable.
+
         .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
             https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
 
         Args:
-            V (Tensor): data tensor to be decomposed
+            V (Tensor): data tensor to be decomposed. Can be a sparse tensor returned by :func:`torch.sparse_coo_tensor` 
             beta (float): beta divergence to be minimized, measuring the distance between V and the NMF model
                         Default: ``1.``
             max_iter (int): maximum number of iterations before timing out. Default: ``200``
@@ -712,6 +720,10 @@ class NMFD(BaseComponent):
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
+    Note:
+        Using sparse tensor as target when calling :func:`NMFD.fit() <torchnmf.nmf.BaseComponent.fit>`
+        or :func:`NMFD.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
+
     Args:
         Vshape (tuple, optional): size of target matrix V
         rank (int, optional): size of hidden dimension
@@ -791,6 +803,11 @@ class NMF2D(BaseComponent):
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
 
+    Note:
+        Using sparse tensor as target when calling :func:`NMF2D.fit() <torchnmf.nmf.BaseComponent.fit>` 
+        or :func:`NMF2D.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
+
+
     Args:
         Vshape (tuple, optional): size of target tensor V
         rank (int, optional): size of hidden dimension
@@ -861,6 +878,11 @@ class NMF3D(BaseComponent):
     Note:
         If `Vshape` argument is given, the model will try to infer the size of :meth:`W <torchnmf.nmf.BaseComponent.W>` and
         :meth:`H <torchnmf.nmf.BaseComponent.H>`, and override arguments passed through to :meth:`BaseComponent <torchnmf.nmf.BaseComponent>`.
+
+    Note:
+        Using sparse tensor as target when calling :func:`NMF3D.fit() <torchnmf.nmf.BaseComponent.fit>` 
+        or :func:`NMF3D.sparse_fit() <torchnmf.nmf.BaseComponent.sparse_fit>` is currently not supported.
+
 
     Args:
         Vshape (tuple, optional): size of target tensor V
