@@ -11,13 +11,14 @@ A great example is [PyTorchWavelets](http://github.com/tomrunia/PyTorchWavelets)
 
 In this package I implement NMF, PLCA and their deconvolutional variations in PyTorch based on `torch.nn.Module`, 
 so the models can be moved freely among CPU/GPU devices and utilize parallel computation of cuda.
+We also utilize the computational graph from `torch.autograd` to derive updated coefficients so the amount of codes is reduced and easy to maintain.
 
 # Modules
 
 ## NMF
 
 Basic NMF and NMFD module minimizing beta-divergence using multiplicative update rules.
-The multiplier is obtained via `torch.autograd` so the amount of codes is reduced and easy to maintain.
+
 
 The interface is similar to `sklearn.decomposition.NMF` with some extra options.
 
