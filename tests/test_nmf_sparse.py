@@ -5,7 +5,7 @@ import torch
 from torchnmf.nmf import *
 
 
-@pytest.mark.parametrize('beta', [-1, 0, 0.5, 1, 1.5, 2, 3])
+@pytest.mark.parametrize('beta', [0.5, 1, 1.5, 2, 3])
 @pytest.mark.parametrize('alpha', [0, 0.1])
 @pytest.mark.parametrize('l1_ratio', [0, 0.5, 1.])
 def test_fit_sparse_dense(beta,
@@ -83,7 +83,7 @@ def test_sparse_fit_sparse_dense(beta,
         dense_model.H - sparse_model.H).max().item()
 
 
-@pytest.mark.parametrize('beta', [-1, 0, 0.5, 1, 1.5, 2, 3])
+@pytest.mark.parametrize('beta', [0.5, 1, 1.5, 2, 3])
 @pytest.mark.parametrize('sp_ratio', [0.95, 0.98])
 @pytest.mark.parametrize('alpha', [0, 0.1])
 @pytest.mark.parametrize('l1_ratio', [0, 0.5, 1.])
