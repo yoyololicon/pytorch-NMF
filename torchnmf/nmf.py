@@ -66,27 +66,27 @@ def _double_backward_update(V: Tensor,
         output_pos = None
     elif beta == 0:
         WH_eps = WH.add(eps)
-        output_neg = V / (WH_eps * WH_eps)
-        output_pos = 1 / WH_eps
+        output_pos = WH_eps.reciprocal_()
+        output_neg = output_pos.square().mul_(V)
     else:
         WH_eps = WH.add(eps)
-        output_neg = WH_eps.pow(beta - 2) * V
-        output_pos = WH_eps.pow(beta - 1)
+        output_neg = WH_eps.pow(beta - 2).mul_(V)
+        output_pos = WH_eps.pow_(beta - 1)
 
     # first backward
     WH.backward(output_neg, retain_graph=pos is None)
-    neg = torch.clone(param.grad).relu_().add_(eps)
+    neg = param.grad.relu_().add_(eps)
 
     if pos is None:
-        param.grad.zero_()
+        param.grad = None
         WH.backward(output_pos)
-        pos = torch.clone(param.grad).relu_().add_(eps)
+        pos = param.grad.relu_().add_(eps)
 
     if l1_reg > 0:
         pos.add_(l1_reg)
     if l2_reg > 0:
         pos = pos.add(param.data, alpha=l2_reg)
-    multiplier = neg / pos
+    multiplier = neg.div_(pos)
     if gamma != 1:
         multiplier.pow_(gamma)
     param.data.mul_(multiplier)
@@ -102,18 +102,18 @@ def _sp_double_backward_update(pos_out: Tensor,
     param.grad = None
     # first backward
     neg_out.backward()
-    neg = torch.clone(param.grad).relu_().add_(eps)
+    neg = param.grad.relu_().add_(eps)
 
     if pos is None:
-        param.grad.zero_()
+        param.grad = None
         pos_out.backward()
-        pos = torch.clone(param.grad).relu_().add_(eps)
+        pos = param.grad.relu_().add_(eps)
 
     if l1_reg > 0:
         pos.add_(l1_reg)
     if l2_reg > 0:
         pos = pos.add(param.data, alpha=l2_reg)
-    multiplier = neg / pos
+    multiplier = neg.div_(pos)
     if gamma != 1:
         multiplier.pow_(gamma)
     param.data.mul_(multiplier)
@@ -162,7 +162,7 @@ def _renorm(W: Tensor,
 def _get_V_norm(V: Tensor, beta: float):
     assert V.is_coalesced()
     if beta == 2:
-        return V.values() @ V.values()
+        return V.values() @ V.values() * 0.5
     elif beta == 1:
         return V.values() @ V.values().add(eps).log() - V.values().sum()
     elif beta == 0:
@@ -427,9 +427,6 @@ class BaseComponent(torch.nn.Module):
         Note:
             Although the value range of ``beta`` is unrestricted, the original implementation only use Euclidean Distance 
             (which means ``beta=2``) as their loss function, and we have no gaurantee on other values besides 2.
-
-        Warning:
-            When using sparse tensor as target and setting ``beta<0``, the training process will become very unstable.
 
         .. _`Non-negative Matrix Factorization with Sparseness Constraints`:
             https://www.jmlr.org/papers/volume5/hoyer04a/hoyer04a.pdf
