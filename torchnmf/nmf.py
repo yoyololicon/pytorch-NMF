@@ -329,7 +329,7 @@ class BaseComponent(torch.nn.Module):
         assert torch.all((V._values() if V.is_sparse else V) >=
                          0.), "Target should be non-negative."
 
-        if V.min() == 0 and beta <= 0:
+        if (V.is_sparse or V.min() == 0) and beta <= 0:
             raise ValueError("When beta <= 0 and V contains zeros, "
                              "the training process may diverge. "
                              "Please add small values to "
@@ -451,7 +451,7 @@ class BaseComponent(torch.nn.Module):
         assert torch.all((V._values() if V.is_sparse else V) >=
                          0.), "Target should be non-negative."
 
-        if V.min() == 0 and beta <= 0:
+        if (V.is_sparse or V.min() == 0) and beta <= 0:
             raise ValueError("When beta <= 0 and V contains zeros, "
                              "the training process may diverge. "
                              "Please add small values to "
