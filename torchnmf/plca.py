@@ -286,7 +286,7 @@ class BaseComponent(torch.nn.Module):
 
                 if n_iter % 10 == 9:
                     with torch.no_grad():
-                        WZH = self.reconstruct(H, W, Z)
+                        WZH = self.reconstruct(H, W, Z) * norm
                         loss = kl_div(WZH, V).mul(2).sqrt().item()
                         log_pro = _log_probability(
                             V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha).item()
