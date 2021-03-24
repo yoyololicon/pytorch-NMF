@@ -11,6 +11,7 @@ from torchnmf.metrics import *
 def test_beta_value_range(beta, x, y):
     loss = beta_div(x, y, beta)
     assert not torch.any(torch.isnan(loss)), loss.item()
+    assert not torch.any(loss < 0), loss.item()
 
 
 @pytest.mark.parametrize('x', [torch.rand(100)])
