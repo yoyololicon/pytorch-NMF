@@ -240,7 +240,7 @@ class BaseComponent(torch.nn.Module):
 
         with torch.no_grad():
             WZH = self.reconstruct(H, W, Z)
-            loss_init = previous_loss = kl_div(WZH, V).mul(2).sqrt().item()
+            loss_init = previous_loss = kl_div(WZH * norm, V * norm).mul(2).sqrt().item()
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
