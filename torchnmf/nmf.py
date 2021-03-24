@@ -164,12 +164,9 @@ def _get_V_norm(V: Tensor, beta: float):
     if beta == 2:
         return V.values() @ V.values() * 0.5
     elif beta == 1:
-        return V.values() @ V.values().add(eps).log() - V.values().sum()
-    elif beta == 0:
-        return -V.numel() - V.values().add(eps).log().sum()
+        return V.values() @ V.values().log() - V.values().sum()
     else:
         V_vals = V.values()
-        V_vals = V_vals[V_vals > 0]
         return V_vals.pow(beta).sum() / beta / (beta - 1)
 
 
@@ -629,11 +626,6 @@ def _nmf_sp_recon_beta_pos_neg(V: Tensor, H: Tensor, W: Tensor, beta: float, eps
     if beta == 1:
         pos = W.sum(0) @ H.sum(0)
         neg = V_vals @ WH_vals.add(eps).log()
-    elif beta == 0:
-        pos = (W @ H[0] + eps).log().sum()
-        for i in range(1, H.shape[0]):
-            pos += (W @ H[i] + eps).log().sum()
-        neg = -V_vals.div(WH_vals.add(eps)).sum()
     else:
         bminus = beta - 1
         pos = (W @ H[0] + eps).pow(beta).sum()
