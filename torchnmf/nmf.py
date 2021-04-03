@@ -600,7 +600,6 @@ class BaseComponent(torch.nn.Module):
 def _nmf_sparse_reconstruct(H: Tensor, W: Tensor, indices: Tensor):
     ii, jj = indices[0], indices[1]
     n_vals = indices.shape[1]
-    dot_vals = []
     rank = W.shape[1]
     batch_size = max(rank, n_vals // rank)
 
