@@ -243,6 +243,9 @@ class BaseComponent(torch.nn.Module):
                 assert self.H.shape[1] == infer_rank, "Latent size of H does not match with others!"
             if getattr(self, "W") is not None:
                 assert self.W.shape[1] == infer_rank, "Latent size of W does not match with others!"
+                self.out_channels = self.W.shape[0]
+                if self.W.ndim > 2:
+                    self.kernel_size = self.W.shape[2:]
             rank = infer_rank
 
         self.rank = rank
