@@ -135,6 +135,9 @@ class BaseComponent(torch.nn.Module):
                 assert self.H.shape[1] == infer_rank, "Latent size of H does not match with others!"
             if getattr(self, "W") is not None:
                 assert self.W.shape[1] == infer_rank, "Latent size of W does not match with others!"
+                self.out_channels = self.W.shape[0]
+                if self.W.ndim > 2:
+                    self.kernel_size = self.W.shape[2:]
             rank = infer_rank
 
         self.rank = rank
@@ -240,7 +243,8 @@ class BaseComponent(torch.nn.Module):
 
         with torch.no_grad():
             WZH = self.reconstruct(H, W, Z)
-            loss_init = previous_loss = kl_div(WZH * norm, V * norm).mul(2).sqrt().item()
+            loss_init = previous_loss = kl_div(
+                WZH * norm, V * norm).mul(2).sqrt().item()
 
         with tqdm(total=max_iter, disable=not verbose) as pbar:
             for n_iter in range(max_iter):
@@ -287,7 +291,8 @@ class BaseComponent(torch.nn.Module):
                 if n_iter % 10 == 9:
                     with torch.no_grad():
                         WZH = self.reconstruct(H, W, Z)
-                        loss = kl_div(WZH * norm, V * norm).mul(2).sqrt().item()
+                        loss = kl_div(WZH * norm, V *
+                                      norm).mul(2).sqrt().item()
                         log_pro = _log_probability(
                             V, WZH, W, Z, H, W_alpha, Z_alpha, H_alpha).item()
                     pbar.set_postfix(loss=loss, log_likelihood=log_pro)
