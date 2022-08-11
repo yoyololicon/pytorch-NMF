@@ -207,7 +207,9 @@ class BaseComponent(torch.nn.Module):
                  W: Union[Iterable[int], Tensor] = None,
                  H: Union[Iterable[int], Tensor] = None,
                  trainable_W: bool = True,
-                 trainable_H: bool = True):
+                 trainable_H: bool = True,
+                 device: Union[str, torch.device] = 'cpu',
+                 dtype: torch.dtype = torch.float64):
         super().__init__()
 
         infer_rank = None
@@ -218,7 +220,7 @@ class BaseComponent(torch.nn.Module):
             self.W.data.copy_(W)
             infer_rank = self.W.shape[1]
         elif isinstance(W, Iterabc):
-            self.register_parameter('W', Parameter(torch.randn(*W).abs()))
+            self.register_parameter('W', Parameter(torch.randn(*W).to(device).to(dtype).abs()))
             infer_rank = W[1]
         else:
             self.register_parameter('W', None)
@@ -231,7 +233,7 @@ class BaseComponent(torch.nn.Module):
             self.H.data.copy_(H)
             infer_rank = self.H.shape[1]
         elif isinstance(H, Iterabc):
-            self.register_parameter('H', Parameter(torch.randn(*H).abs()))
+            self.register_parameter('H', Parameter(torch.randn(*H).to(device).to(dtype).abs()))
             infer_rank = H[1]
         else:
             self.register_parameter('H', None)
