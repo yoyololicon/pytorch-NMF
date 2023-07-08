@@ -13,7 +13,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yoyololicon/pytorch-NMFs",
-    packages=setuptools.find_packages(),
+    packages=["torchnmf"],
     install_requires=['torch>=1.4',
                       'tqdm'],
     classifiers=[
