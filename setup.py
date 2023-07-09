@@ -12,10 +12,9 @@ setuptools.setup(
     description="A pytorch package for Non-negative Matrix Factorization",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yoyololicon/pytorch-NMFs",
+    url="https://github.com/yoyololicon/pytorch-NMF",
     packages=["torchnmf"],
-    install_requires=['torch>=1.4',
-                      'tqdm'],
+    install_requires=["torch>=1.4", "tqdm"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
